@@ -1,0 +1,334 @@
+diff --git a/src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML b/src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML
+index 310d6e2..ea831a1 100644
+--- a/src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML
++++ b/src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML
+@@ -35,6 +35,27 @@ sig
+   val trace : bool Config.T
+   val pseudo_abs_name : string
+   val default_relevance_fudge : relevance_fudge
++
++  type ptype
++  val typargs_of_ptype : ptype -> typ list
++
++  type candidate =
++    {name : string,
++     prop : term,
++     stature : stature}
++  type trigger_input =
++    {ctxt : Proof.context,
++     hyp_ts : term list,
++     concl_t : term,
++     new_consts : string list,
++     rel_consts : ptype list Symtab.table,
++     accepted : lazy_fact list}
++  type trigger = trigger_input -> candidate list
++  val add_trigger : string -> trigger -> Context.generic -> Context.generic
++
++  datatype origin = From_Pool | From_Trigger
++  val mepo_suggested_facts_with_origin : Proof.context -> params -> int ->
++    relevance_fudge option -> term list -> term -> lazy_fact list -> (fact * origin) list
+   val mepo_suggested_facts : Proof.context -> params -> int -> relevance_fudge option ->
+     term list -> term -> lazy_fact list -> fact list
+ end;
+@@ -105,6 +126,8 @@ fun order_of_type (Type (\<^type_name>\<open>fun\<close>, [T1, T2])) =
+ datatype pattern = PVar | PApp of string * pattern list
+ datatype ptype = PType of int * typ list
+ 
++fun typargs_of_ptype (PType (_, Ts)) = Ts
++
+ fun string_of_patternT (TVar _) = "_"
+   | string_of_patternT (Type (s, ps)) = if null ps then s else s ^ string_of_patternsT ps
+   | string_of_patternT (TFree (s, _)) = s
+@@ -222,10 +245,11 @@ fun theory_constify ({theory_const_rel_weight, theory_const_irrel_weight, ...} :
+ fun theory_const_prop_of fudge th =
+   theory_constify fudge (Thm.theory_base_name th) (Thm.prop_of th)
+ 
+-fun pair_consts_fact thy fudge fact =
+-  (case fact |> snd |> theory_const_prop_of fudge |> pconsts_in_fact thy of
++(* Pairs an item with the constants of its proposition, unless there are none. *)
++fun pair_consts thy t item =
++  (case pconsts_in_fact thy t of
+     [] => NONE
+-  | consts => SOME ((fact, consts), NONE))
++  | consts => SOME ((item, consts), NONE))
+ 
+ (* A two-dimensional symbol table counts frequencies of constants. It's keyed
+    first by constant name and second by its list of type instantiations. For the
+@@ -251,7 +275,7 @@ fun ptype_ord (PType (m, ps), PType (n, qs)) =
+ 
+ structure PType_Tab = Table(type key = ptype val ord = ptype_ord)
+ 
+-fun count_fact_consts thy fudge =
++fun count_consts_in_term thy =
+   let
+     fun do_const const (s, T) ts =
+       (* Two-dimensional table update. Constant maps to types maps to count. *)
+@@ -264,7 +288,9 @@ fun count_fact_consts thy fudge =
+       | (Free x, ts) => do_const false x ts
+       | (Abs (_, _, t'), ts) => fold do_term (t' :: ts)
+       | (_, ts) => fold do_term ts)
+-  in do_term o theory_const_prop_of fudge o snd end
++  in do_term end
++
++fun count_fact_consts thy fudge = count_consts_in_term thy o theory_const_prop_of fudge o snd
+ 
+ fun pow_int _ 0 = 1.0
+   | pow_int x 1 = x
+@@ -353,9 +379,71 @@ fun fact_weight fudge stature const_tab rel_const_tab chained_const_tab
+         if Real.isFinite res then res else 0.0
+       end)
+ 
++(* Fact triggers generate candidate facts while MePo iterates. *)
++
++type candidate =
++  {name : string,
++   prop : term,
++   stature : stature}
++
++type trigger_input =
++  {ctxt : Proof.context,
++   hyp_ts : term list,
++   concl_t : term,
++   new_consts : string list,
++   rel_consts : ptype list Symtab.table,
++   accepted : lazy_fact list}
++
++type trigger = trigger_input -> candidate list
++
++structure Triggers = Generic_Data
++(
++  type T = trigger Symtab.table
++  val empty = Symtab.empty
++  fun merge data = Symtab.merge (K true) data
++)
++
++fun add_trigger name trigger = Triggers.map (Symtab.update (name, trigger))
++
++datatype origin = From_Pool | From_Trigger
++
++(* A generated candidate carries the name of its trigger and its own frequency table: the table of
++   the pool plus the candidate's own occurrences. *)
++datatype item =
++  Pool_Fact of lazy_fact |
++  Generated of string * candidate * int PType_Tab.table Symtab.table
++
++fun name_of_item (Pool_Fact ((name, _), _)) = name ()
++  | name_of_item (Generated (_, {name, ...}, _)) = name
++
++fun stature_of_item (Pool_Fact ((_, stature), _)) = stature
++  | stature_of_item (Generated (_, {stature, ...}, _)) = stature
++
++fun const_tab_of_item const_tab (Pool_Fact _) = const_tab
++  | const_tab_of_item _ (Generated (_, _, const_tab)) = const_tab
++
++(* The theorem of a generated candidate is evaluated only here, when MePo accepts it. *)
++fun accept_item _ (Pool_Fact fact) = (fact, From_Pool)
++  | accept_item ctxt (Generated (trigger_name, {name, stature, ...}, _)) =
++    let
++      val prefix =
++        "Sledgehammer fact trigger " ^ quote trigger_name ^ ": the candidate " ^ name ^ " "
++      val ths =
++        \<^try>\<open>thms_of_name ctxt name
++          catch exn =>
++            error (prefix ^ "cannot be evaluated:\n" ^
++              Runtime.exn_message (Runtime.exn_context (SOME ctxt) exn))\<close>
++    in
++      (case ths of
++        [th] => (((K name, stature), th), From_Trigger)
++      | _ =>
++        error (prefix ^ "evaluates to " ^ string_of_int (length ths) ^
++          " theorems, but exactly one is expected."))
++    end
++
+ fun take_most_relevant ctxt max_facts remaining_max
+     ({max_imperfect, max_imperfect_exp, ...} : relevance_fudge)
+-    (candidates : ((lazy_fact * (string * ptype) list) * real) list) =
++    (candidates : ((item * (string * ptype) list) * real) list) =
+   let
+     val max_imperfect =
+       Real.ceil (Math.pow (max_imperfect,
+@@ -370,7 +458,7 @@ fun take_most_relevant ctxt max_facts remaining_max
+       "Actually passed (" ^ string_of_int (length accepts) ^ " of " ^
+       string_of_int (length candidates) ^ "): " ^
+       (accepts
+-       |> map (fn ((((name, _), _), _), weight) => name () ^ " [" ^ Real.toString weight ^ "]")
++       |> map (fn ((item, _), weight) => name_of_item item ^ " [" ^ Real.toString weight ^ "]")
+        |> commas));
+     (accepts, more_rejects @ rejects)
+   end
+@@ -418,6 +506,7 @@ fun relevance_filter ctxt thres0 decay max_facts
+         (fudge as {threshold_divisor, ridiculous_threshold, ...}) facts hyp_ts concl_t =
+   let
+     val thy = Proof_Context.theory_of ctxt
++    val thy_name = Context.theory_base_name thy
+     val const_tab = fold (count_fact_consts thy fudge) facts Symtab.empty
+     val add_pconsts = add_pconsts_in_term thy
+     val chained_ts =
+@@ -426,11 +515,44 @@ fun relevance_filter ctxt thres0 decay max_facts
+     val goal_const_tab =
+       Symtab.empty
+       |> fold add_pconsts hyp_ts
+-      |> add_pconsts concl_t
++      |> add_pconsts (theory_constify fudge thy_name concl_t)
+       |> (fn tab => if Symtab.is_empty tab then chained_const_tab else tab)
+       |> fold (if_empty_replace_with_scope thy facts) [Chained, Assum, Local]
+ 
+-    fun iter j remaining_max thres rel_const_tab hopeless hopeful =
++    val triggers = Symtab.dest (Triggers.get (Context.Proof ctxt))
++
++    (* Generated candidates are distinct up to renaming of schematic variables. *)
++    fun add_candidate trigger_name (candidate as {prop, ...} : candidate) (items, seen) =
++      let val key = normalize_vars prop in
++        if Termtab.defined seen key then
++          (items, seen)
++        else
++          let
++            val t = theory_constify fudge thy_name prop
++            val item = Generated (trigger_name, candidate, count_consts_in_term thy t const_tab)
++          in
++            (the_list (pair_consts thy t item) @ items, Termtab.insert_set key seen)
++          end
++      end
++
++    (* The trigger state: the accepted facts, most recent first, and the candidates seen so far. *)
++    fun run_triggers new_consts rel_consts new_accepts (trigger_state as (accepted, seen)) =
++      if null triggers then
++        ([], trigger_state)
++      else
++        let
++          val accepted = fold (cons o fst) new_accepts accepted
++          val input =
++            {ctxt = ctxt, hyp_ts = hyp_ts, concl_t = concl_t, new_consts = new_consts (),
++             rel_consts = rel_consts, accepted = accepted}
++          val (items, seen) =
++            ([], seen) |> fold (fn (trigger_name, trigger) =>
++              fold (add_candidate trigger_name) (trigger input)) triggers
++        in
++          (rev items, (accepted, seen))
++        end
++
++    fun iter j remaining_max thres rel_const_tab trigger_state hopeless hopeful =
+       let
+         val hopeless =
+           hopeless |> j = really_hopeless_get_kicked_out_iter ? filter_out (fn (_, w) => w < 0.001)
+@@ -438,13 +560,15 @@ fun relevance_filter ctxt thres0 decay max_facts
+             (* Nothing has been added this iteration. *)
+             if j = 0 andalso thres >= ridiculous_threshold then
+               (* First iteration? Try again. *)
+-              iter 0 max_facts (thres / threshold_divisor) rel_const_tab hopeless hopeful
++              iter 0 max_facts (thres / threshold_divisor) rel_const_tab trigger_state hopeless
++                hopeful
+             else
+               []
+           | relevant candidates rejects [] =
+             let
+               val (accepts, more_rejects) =
+                 take_most_relevant ctxt max_facts remaining_max fudge candidates
++              val accepts' = map (accept_item ctxt o fst o fst) accepts
+               val sps = maps (snd o fst) accepts
+               val rel_const_tab' =
+                 rel_const_tab |> fold add_pconst_to_table sps
+@@ -468,20 +592,29 @@ fun relevance_filter ctxt thres0 decay max_facts
+                   |> Symtab.dest
+                   |> subtract (eq_prod (op =) (eq_list ptype_eq)) (Symtab.dest rel_const_tab)
+                   |> map string_of_hyper_pconst));
+-              map (fst o fst) accepts @
++              accepts' @
+               (if remaining_max = 0 then
+                  []
+                else
+-                 iter (j + 1) remaining_max thres rel_const_tab' hopeless_rejects hopeful_rejects)
++                 let
++                   fun new_consts () =
++                     sort_distinct fast_string_ord (map fst (filter is_dirty sps))
++                   val (generated, trigger_state') =
++                     run_triggers new_consts rel_const_tab' accepts' trigger_state
++                 in
++                   iter (j + 1) remaining_max thres rel_const_tab' trigger_state' hopeless_rejects
++                     (generated @ hopeful_rejects)
++                 end)
+             end
+           | relevant candidates rejects
+-              (((ax as (((_, stature), _), fact_consts)), cached_weight) :: hopeful) =
++              (((ax as (item, fact_consts)), cached_weight) :: hopeful) =
+             let
+               val weight =
+                 (case cached_weight of
+                   SOME w => w
+                 | NONE =>
+-                  fact_weight fudge stature const_tab rel_const_tab chained_const_tab fact_consts)
++                  fact_weight fudge (stature_of_item item) (const_tab_of_item const_tab item)
++                    rel_const_tab chained_const_tab fact_consts)
+             in
+               if weight >= thres then
+                 relevant ((ax, weight) :: candidates) rejects hopeful
+@@ -502,16 +635,16 @@ fun relevance_filter ctxt thres0 decay max_facts
+       fold_aterms (curry (fn (Const (s', _), false) => s' = s | (_, b) => b)) t
+                   false
+     fun uses_const_anywhere accepts s =
+-      exists (uses_const s o Thm.prop_of o snd) accepts orelse
++      exists (uses_const s o Thm.prop_of o snd o fst) accepts orelse
+       exists (uses_const s) (concl_t :: hyp_ts)
+     fun add_set_const_thms accepts =
+       exists (uses_const_anywhere accepts) set_consts ? append set_thms
+     fun insert_into_facts accepts [] = accepts
+       | insert_into_facts accepts ths =
+         let
+-          val add = facts |> filter (member Thm.eq_thm_prop ths o snd)
++          val add = facts |> filter (member Thm.eq_thm_prop ths o snd) |> map (rpair From_Pool)
+           val (bef, after) = accepts
+-            |> filter_out (member Thm.eq_thm_prop ths o snd)
++            |> filter_out (member Thm.eq_thm_prop ths o snd o fst)
+             |> take (max_facts - length add)
+             |> chop special_fact_index
+         in
+@@ -520,34 +653,38 @@ fun relevance_filter ctxt thres0 decay max_facts
+     fun insert_special_facts accepts =
+       (* FIXME: get rid of "ext" here once it is treated as a helper *)
+       []
+-      |> could_benefit_from_ext accepts ? cons @{thm ext}
++      |> could_benefit_from_ext (map fst accepts) ? cons @{thm ext}
+       |> add_set_const_thms accepts
+       |> insert_into_facts accepts
++    val (generated, trigger_state) =
++      run_triggers (fn () => Symtab.keys goal_const_tab) goal_const_tab [] ([], Termtab.empty)
+   in
+-    facts
+-    |> map_filter (pair_consts_fact thy fudge)
+-    |> iter 0 max_facts thres0 goal_const_tab []
++    generated @
++      map_filter (fn fact as (_, th) =>
++        pair_consts thy (theory_const_prop_of fudge th) (Pool_Fact fact)) facts
++    |> iter 0 max_facts thres0 goal_const_tab trigger_state []
+     |> insert_special_facts
+     |> tap (fn accepts => trace_msg ctxt (fn () =>
+       "Total relevant: " ^ string_of_int (length accepts)))
+   end
+ 
+-fun mepo_suggested_facts ctxt ({fact_thresholds = (thres0, thres1), ...} : params) max_facts fudge
+-    hyp_ts concl_t facts =
++fun mepo_suggested_facts_with_origin ctxt ({fact_thresholds = (thres0, thres1), ...} : params)
++    max_facts fudge hyp_ts concl_t facts =
+   let
+-    val thy = Proof_Context.theory_of ctxt
+     val fudge = fudge |> the_default default_relevance_fudge
+     val decay = Math.pow ((1.0 - thres1) / (1.0 - thres0), 1.0 / Real.fromInt (max_facts + 1))
+   in
+     trace_msg ctxt (fn () => "Considering " ^ string_of_int (length facts) ^ " facts");
+     (if thres1 < 0.0 then
+-       facts
++       map (rpair From_Pool) facts
+      else if thres0 > 1.0 orelse thres0 > thres1 orelse max_facts <= 0 then
+        []
+      else
+-       relevance_filter ctxt thres0 decay max_facts fudge facts hyp_ts
+-         (concl_t |> theory_constify fudge (Context.theory_base_name thy)))
+-    |> map fact_of_lazy_fact
++       relevance_filter ctxt thres0 decay max_facts fudge facts hyp_ts concl_t)
++    |> map (apfst fact_of_lazy_fact)
+   end
+ 
++fun mepo_suggested_facts ctxt params max_facts fudge hyp_ts concl_t =
++  map fst o mepo_suggested_facts_with_origin ctxt params max_facts fudge hyp_ts concl_t
++
+ end;

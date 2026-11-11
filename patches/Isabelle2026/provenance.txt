@@ -1,0 +1,6 @@
+feature: Isabelle2026/sledgehammer_fact_trigger
+release_tag: Isabelle2026/sledgehammer_fact_trigger/1
+commit: ffe3a04dc4fc69225d4125942c54e3fbf21e32d4
+base_tag: Isabelle2026/fast_abbrev_printing/2
+base_commit: 135d64fc71c6e89765fadd504f55b0bc2c5eb90a
+build_string_prefix: Isabelle2026
