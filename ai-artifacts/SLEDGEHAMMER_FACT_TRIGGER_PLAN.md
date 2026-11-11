@@ -1,6 +1,6 @@
 # Sledgehammer fact trigger 计划
 
-状态：已实现并发布为 `isabelle-sledgehammer-fact-trigger 2026.0.1`（现状见 13.6）。
+状态：已实现并发布，当前版本 `isabelle-sledgehammer-fact-trigger 2026.0.2`（现状见 13.7）。
 设计稿 rev 3，2026-11-11（UTC）定稿；实现期间作者改定的地方已并入各节（5 节第 3 处修法等）。rev 1 和 rev 2 各经过一轮对抗评审
 （结论都是「修改后接受」），本稿已并入两轮的结论和作者的决定。第二轮没有发现设计缺陷，只补了
 说明和测试；作者定不再评第三轮。评审记录见第 12 节。
@@ -682,7 +682,32 @@ MLML 仓库的 `ai-artifacts/sh_name_probe/`（未提交）：
 
 7 节的静态分析和两轮评审的明细都只在设计会话的记录里，结论已写进本文件。
 
-### 13.6 发布之后的状态（2026-11-10，本地时间；以本小节为准）
+### 13.7 第 2 个发布之后的状态（2026-11-11，本地时间；以本小节为准）
+
+**当前版本**：`isabelle-sledgehammer-fact-trigger 2026.0.2`（build `Isabelle2026_0`）在 conda 频道上；
+`2026.0.1` 留在频道上不删。发布标签 `Isabelle2026/sledgehammer_fact_trigger/2`：private tree 在
+`10d0506`，feature repository 在 `2381897`。试运行 `42986040102`，正式发布 `42988196693`，都全绿，
+三个平台上测试会话都通过。依赖与第 1 版相同。
+
+第 2 版相对第 1 版：Isabelle 源码只有 `src/HOL/Tools/try0_util.ML` 不同（5 节第 4 处修法）；
+README 改了对触发器输入的描述；测试加了事实引用的往返检查和三个并列属性走 metis 的端到端
+检查。起因和处理见 12 节的第二轮代码评审。提交：private tree `10d0506`；feature repository
+`04c21bd`（README、测试、计划）和 `2381897`（补丁）；`isabelle-packaging-ci` 的 `b99f8d6`
+（`ROLLOUT_STATUS.md`）。
+
+下游：`light_locale`（它的会话现在叫 `Minilang Upgrading`，原名 `light locale old plan`）和
+`default_fact_qualifiers` 都已被告知合并第 2 版而不是第 1 版。它们各自合并并发布之后，本
+feature 才进入 `daily`。
+
+已知而没有处理的（都是原版的行为，13.6 末尾列的几项也仍然成立）：
+- 原版 `Sledgehammer_Fact.fact_of_ref` 给用户 `sledgehammer (add: foo[a, b])` 的事实起名时，
+  每个属性一组方括号。这样的名字到了 tactic prover 解析失败，该 prover 放弃；原版同样放弃。
+  作者被问过是否纳入，未答复，按不纳入处理。
+- 字面事实（cartouche）被 Try0 打印时文本里带着 YXML 标记。
+- MLML 里 `contrib/sledgehammer_fact_trigger`、`contrib/my_better_isabelle_prover`、
+  `contrib/isabelle-packaging-ci` 三个 submodule 指针落后于上面的提交，没有更新。
+
+### 13.6 第 1 个发布之后的状态（2026-11-10，本地时间；已被 13.7 取代）
 
 **已发布**：`isabelle-sledgehammer-fact-trigger 2026.0.1`（build `Isabelle2026_0`）在 conda 频道上。
 发布标签 `Isabelle2026/sledgehammer_fact_trigger/1`：private tree 在 `ffe3a04`，feature repository
