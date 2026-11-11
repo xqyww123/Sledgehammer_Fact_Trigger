@@ -11,3 +11,4 @@ session Sledgehammer_Fact_Trigger_Test = HOL +
   theories
     Sledgehammer_Fact_Trigger_Test
     Readme_Example
+    Fact_Reference_Test

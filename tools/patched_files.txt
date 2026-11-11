@@ -1,3 +1,4 @@
+src/HOL/Tools/Metis/metis_tactic.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_fact.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_mash.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML
