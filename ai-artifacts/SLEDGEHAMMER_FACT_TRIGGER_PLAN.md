@@ -1,6 +1,7 @@
 # Sledgehammer fact trigger 计划
 
-状态：设计稿 rev 3，2026-11-11（UTC），可以开始实现。rev 1 和 rev 2 各经过一轮对抗评审
+状态：已实现并发布为 `isabelle-sledgehammer-fact-trigger 2026.0.1`（现状见 13.6）。
+设计稿 rev 3，2026-11-11（UTC）定稿；实现期间作者改定的地方已并入各节（5 节第 3 处修法等）。rev 1 和 rev 2 各经过一轮对抗评审
 （结论都是「修改后接受」），本稿已并入两轮的结论和作者的决定。第二轮没有发现设计缺陷，只补了
 说明和测试；作者定不再评第三轮。评审记录见第 12 节。
 
@@ -182,6 +183,9 @@ val insert_generated_facts : (fact * origin) list -> fact list -> fact list
 
 - 【已定】每轮一次：2.2 第 3 步算出 `rel_const_tab'` 之后调用所有触发器，`new_consts` 是
   本轮新增常量的名字。
+  【已定，2026-11-10】名额在某一轮用完时，那一轮之后不再调用：它产出的候选不会再被打分。
+  这是实现时的做法，当时没有标明与上一句的字面不同，第二轮代码评审指出后作者接受。对纯函数
+  的触发器来说它观察不到。README 因此写的是「每一轮之前调用」。
 - 【已定】第 0 轮之前额外调用一次：`new_consts` 是初始相关常量集合的全部常量，`accepted`
   为空，产出的候选参加第 0 轮。理由有两条：目标里的常量如果表项此后不再变化（单态常量、
   固定变量、没有获得新类型实例的常量），就永远不会出现在新增常量里；表项会变的，也要到
@@ -337,6 +341,31 @@ tactic prover 失败有两个独立的原因，【已定】两处都按正规方
    （`isabelle-patch-control check-signatures`）要求 base 里已有的签名条目原样保留，feature
    只能新增条目。作者 2026-11-10 改定为现在的做法。
    这改变了原版 `try0` 对带引号名字的输出（原版打印出来也是坏的）。
+   更正：上面「空名字（匿名的 `[attributes]` 形式）原样保留」里的语法写错了。匿名事实的写法是
+   `[[attributes]]`（`Parse.thm` 的第一个分支），第 1 个发布把它打印成了 `[attributes]`，
+   解析不了。见第 4 处。
+
+4. **Try0 把每个属性各打一组方括号**（同一个函数）。【已定，2026-11-10，第二轮代码评审发现，
+   第 2 个发布修】Isar 里一个事实后面只能跟一组方括号，多个属性用逗号隔开。原版和第 1 个
+   发布把 `PQ[of 7, OF P7]` 打印成 `PQ["of" 7]["OF" P7]`，解析不了。原版里 Sledgehammer 到
+   不了这里，是第 1 处修法让它可达：候选名字带两个以上并列属性时，全局事实配 metis 会让这个
+   prover 放弃，局部事实则会报出一个插入后解析不了的证明。第 1 个发布的测试只用了单个属性
+   （`QR[OF PQ[OF P7]]` 是嵌套，不是并列），没有查出来。
+   修法：`string_of_xref'` 写成 `Parse.thm` 的逐分支逆运算。全部属性放进一组，用发行版已有的
+   `Attrib.pretty_attribs`（没有属性时它什么都不打印）；匿名事实（名字为空且没有选择）在外面
+   再套一层方括号，没有属性时打印 `[[]]`；字面事实和有名字的事实在后面接上属性。对有名字的
+   事实和字面事实，属性为零个或一个时输出与原来逐字节相同；匿名事实的输出是有意改变的。
+   作者的条件是先由一个 Opus agent 独立核对这个修法；它读源码逐项核对后结论为通过，并建议了
+   两处已采纳的改动：复用 `Attrib.pretty_attribs` 而不是抄它的函数体；匿名分支的模式写成
+   `Facts.Named (("", _), NONE)`，使 `""(n)` 这种带选择的空名字不被误当成匿名事实。
+   它还指出两件不属于这次修改、没有处理的事：字面事实的文本里带着 YXML 标记（原版如此）；
+   原版 `Sledgehammer_Fact.fact_of_ref` 给用户 `add:` 的事实起名时同样是每个属性一组方括号，
+   这样的名字到了 tactic prover 会解析失败、该 prover 放弃（原版也是放弃）。
+   【实测，草稿环境】16 种形式（普通名字、长名字、带选择、带引号、单个属性、嵌套属性、两个
+   和三个并列属性、嵌套里含并列、匿名、空的匿名、字面事实、字面事实带属性、`where … , THEN …`、
+   属性带多个事实参数、属性带引号里的项）解析、打印、再解析、再打印都稳定，可求值的那些前后
+   求值出相同的定理；`by (metis QR[OF PQ, of 7, OF P7])` 通过。探针在 MLML 仓库的
+   `ai-artifacts/sh_xref_print_probe/`（不提交）。
 
    另见：`auto` 带 direct 类事实时报 `Bad arguments for method "auto"`。这是把事实直接写在
    `auto` 后面造成的，与属性无关，没有查它在发行版里是否本来如此，不属于本计划。
@@ -421,12 +450,30 @@ Sledgehammer 面板；`sledgehammer learn_prover` / `relearn_prover`；ML 直接
   做法，不为触发器破例。
 - `auto_sledgehammer` 的 `raw_sledgehammer`：见 6.4，要改。
 
-未确定，实现时实测：
-- 命令位置不带 exec id 的前端下（`Pure/PIDE/execution.ML` 的 `Execution.fork`），fork 出的命令
-  的报错不打印。Isa-REPL 属于这种情况。这一项不依赖触发器，现在就可以在共享树上用一个会抛
-  `ERROR` 的探针测。
-- 批量构建时报错的具体文本。
-- Mirabelle、两个 TPTP 导出工具这三个调用者各自如何处理。
+原先未确定、2026-11-10 发布之后查明的四项（本节其余内容仍是【未核实】的静态分析）：
+
+- **Isa-REPL**：【实测，用了替代品】`sledgehammer` 命令内部抛出的 `ERROR` 能到达客户端。
+  做法：在共享树上起一个 REPL 服务器，执行
+  `lemma "rev (rev xs) = xs" sledgehammer [provers = no_such_prover]`，客户端收到
+  `REPLFail: No such prover: no_such_prover`。静态分析担心的「fork 出的命令的报错不打印」在
+  这条路上没有发生。替代之处：共享树里没有触发器，用的是 `run_sledgehammer` 里另一处同步抛出
+  的 `ERROR`；触发器自己的报错没有在 Isa-REPL 下跑过，按「同一个线程、命令返回之前抛出」
+  推断它走同一条路。
+- **批量构建**：【实测】会话构建失败，文本完整：
+  ```
+  *** Sledgehammer fact trigger "broken": the candidate no_such_fact cannot be evaluated:
+  *** Undefined fact: "no_such_fact" (line 1)
+  *** At command "sledgehammer" (line 14 of "…/Trigger_Error_Probe.thy")
+  ```
+- **Mirabelle**：【实测，`sledgehammer` 动作】不中断运行，报错写进 `mirabelle.log`：
+  `… goal.by … unknown (SH 0ms):  error: Sledgehammer fact trigger "broken": the candidate
+  no_such_fact cannot be evaluated:` 加下一行原始报错。原因是 `Mirabelle.run_action_function`
+  用一个捕获一切非中断异常的处理器包住每个动作。直接调用 MePo 的 `sledgehammer_filter` 动作
+  没有跑（它需要一个 `proof_file` 参数），它被同一个处理器包着。
+- **两个 TPTP 导出工具**：【只读源码，未运行】`atp_theory_export.ML` 和 `mash_export.ML` 调用
+  `mepo_suggested_facts` 的地方外面没有异常处理器，报错原样传给调用它们的 ML 代码。
+
+批量构建和 Mirabelle 的探针在 MLML 仓库的 `ai-artifacts/sh_trigger_error_probe/`（不提交）。
 
 已知的第三方行为，只记录、不处理：
 - AutoCorrode 的 `iq/Isar_Explore.thy` 把 MePo 的调用包在 `handle ERROR _ => []` 里。在那里
@@ -565,6 +612,15 @@ MePo 的核心部分被判定忠实于 3–6 节，两段报错文案逐字一�
 | 没有测试直接调用 `relevant_facts` | 自决：加 `fact_filter = mepo` 的确定性检查（10 节第 13 项） |
 | `fact_thresholds` 为负时触发器不运行 | 驳回：那是原版完全跳过筛选的路径，且用户写不出负的阈值 |
 
+代码评审第二轮（2026-11-10，发布第 1 版之后补做，只评第一轮之后的差异）：2 条 concern，都成立，
+结论「修改后接受，需要发布第 2 版」。第一轮的修改里，`pair_consts` 和 `relevant_facts` 被逐个
+模式对照原版确认无误（含同时产出三份名单的分支），加引号的部分也无误。
+
+| concern | 处理 |
+|---|---|
+| `string_of_xref'` 把每个属性各打一组方括号，匿名事实少一层方括号，都解析不了 | 作者定：5 节第 4 处修法，发布第 2 版 |
+| README 对触发器输入的描述与代码不完全一致（名字不只有常量、漏了去重和纯函数两条、调用时机） | 作者批准了逐句的改法；名额用完后不再调用这处偏离，作者接受（4.1） |
+
 被否决的做法，别再提：
 - 由 MePo 保证 `hyp_ts`、`concl_t` 的统一形状，或加运行时检查：管不了第三方调用者，也补不回
   丢失的类型。
@@ -626,7 +682,41 @@ MLML 仓库的 `ai-artifacts/sh_name_probe/`（未提交）：
 
 7 节的静态分析和两轮评审的明细都只在设计会话的记录里，结论已写进本文件。
 
-### 13.5 实现的状态（2026-11-10）
+### 13.6 发布之后的状态（2026-11-10，本地时间；以本小节为准）
+
+**已发布**：`isabelle-sledgehammer-fact-trigger 2026.0.1`（build `Isabelle2026_0`）在 conda 频道上。
+发布标签 `Isabelle2026/sledgehammer_fact_trigger/1`：private tree 在 `ffe3a04`，feature repository
+在 `f938513`。试运行 `42965742154`，正式发布 `42967653920`（补丁工具仓库
+`xqyww123/isabelle_patch_control` 的 `release-features.yml`），都全绿；三个平台
+（linux-64、linux-aarch64、win-64）上都重建了 HOL 并通过测试会话，含 e、cvc5、metis 的端到端
+检查。
+
+private tree 的提交：`0ce3db4`（实现）、`5c54157`（`string_of_xref'`）、`ffe3a04`（合并
+`Isabelle2026/fast_abbrev_printing/2`，没有文件变化）。base 标签是
+`Isabelle2026/fast_abbrev_printing/2`；包依赖 `isabelle ==2026 0`、
+`isabelle-fast-abbrev-printing ==2026.0.2`、`isabelle-patch-control >=1.0,<2`。
+
+别的仓库里为这次发布做的提交：`contrib/auto_sledgehammer` 的 `2ccead2`（6.4，已随
+auto-sledgehammer 0.3.1 发布）；补丁工具仓库的 `84e1d60`（发布流程的 feature 表加一行）；
+`isabelle-packaging-ci` 的 `5755e7a`（`ROLLOUT_STATUS.md`）；MLML 的 `0d1d427e`、`07a2c41a`
+（登记和更新 submodule 指针；发布后的 `f938513` 还没有在 MLML 里更新）。
+
+发布之后验证的：
+- fast_abbrev_printing 的发布构建脚本在本 feature 的 private tree 上通过（`Pure`、`HOL`、
+  `HOL-Algebra`、它的四个测试会话，含与金标准逐字节比对的两个）。本 feature 不改变打印结果。
+- 7 节原先未确定的四项。
+
+建在本 feature 之上的 feature：`light_locale`、`default_fact_qualifiers`（各自的 `.gitmodules`）。
+它们各自合并这次发布、再各自发布之后，本 feature 才进入 `daily`；在那之前共享树
+`contrib/Isabelle2026` 不含本 feature。两个会话都已通知。
+
+评审：代码评审第一轮见 12 节。第一轮里由实现者自决的修改当时没有按流程送回再评，这是疏漏；
+第二轮评审在发布之后补做，只评第一轮之后的差异（结果另记）。
+
+仍未做：`relevant_facts` 同时产出三份名单的分支没有被任何测试跑到；10 节第 10 项的检查没有
+用故意写错的实现验证过；concept 一侧的触发器还没有人写（本计划范围之外）。
+
+### 13.5 实现的状态（2026-11-10，发布之前写下；已被 13.6 取代）
 
 13.3 的六步都已写完，**全部未提交，private tree 里还没有构建过**。
 

@@ -201,6 +201,32 @@ val _ = check "text of a quoted name"
   (Try0_Util.string_of_xref' \<^context> (Sledgehammer_Util.xref_of_name \<^context> "\"1.IH\"(2)") =
     "\"1.IH\"(2)")
 
+(*every form of a fact reference is printed as text that is parsed back to the same reference:
+  printing the parsed text again gives the same text*)
+val _ =
+  ["PQ", "Sledgehammer_Fact_Trigger_Test.PQ", "PQ(1)", "\"1.IH\"(2)", "\"\"(1)", "PQ[OF P7]",
+   "QR[OF PQ[OF P7]]", "PQ[of 7, OF P7]", "QR[OF PQ, of 7, OF P7]",
+   "QR[OF PQ[of 7, OF P7], simplified]", "PQ[where x = 7, THEN QR]", "PQ[of \"Suc 6\"]",
+   "[[simp]]", "[[]]", "\<open>P 7 \<Longrightarrow> Q 7\<close>", "\<open>P 7 \<Longrightarrow> Q 7\<close>[OF P7]"]
+  |> List.app (fn name =>
+    let
+      val print = Try0_Util.string_of_xref' \<^context> o Sledgehammer_Util.xref_of_name \<^context>
+      val text = print name
+    in check ("round trip of " ^ name ^ ", printed as " ^ text) (print text = text) end)
+
+(*several attributes are one list; the anonymous fact has its own brackets*)
+val _ = check "text of several attributes"
+  (Try0_Util.string_of_xref' \<^context> (Sledgehammer_Util.xref_of_name \<^context> "PQ[of 7, OF P7]") =
+    "PQ[\"of\" 7, \"OF\" P7]")
+val _ = check "text of the anonymous fact"
+  (Try0_Util.string_of_xref' \<^context> (Sledgehammer_Util.xref_of_name \<^context> "[[simp]]") =
+    "[[\"simp\"]]")
+val _ = check "the same theorem from the printed text"
+  (eq_list Thm.eq_thm
+    (apply2 (fn name =>
+        Attrib.eval_thms \<^context> [Sledgehammer_Util.xref_of_name \<^context> name])
+      ("QR[OF PQ, of 7, OF P7]", "QR[\"OF\" PQ, \"of\" 7, \"OF\" P7]")))
+
 fun try0 meth facts =
   Try0.get_proof_method_or_noop meth (SOME (seconds 10.0)) facts
     (Proof.theorem NONE (K I) [[(goal, [])]] \<^context>)
@@ -216,9 +242,9 @@ val _ = check "try0 simp"
 ML \<open>
 (*Sledgehammer finds a proof that uses the generated fact; for an automatic prover, a one-line
   proof with that fact is preplayed.  A prover is skipped where it is not installed.*)
-fun hammer (prover, preplayed) =
+fun hammer (prover, preplayed, name) =
   let
-    val ctxt = with_trigger (on_const \<^const_name>\<open>R\<close> [cand "QR[OF PQ[OF P7]]" goal]) \<^context>
+    val ctxt = with_trigger (on_const \<^const_name>\<open>R\<close> [cand name goal]) \<^context>
     val state = Proof.theorem NONE (K I) [[(goal, [])]] ctxt
     val params = Sledgehammer_Commands.default_params \<^theory>
       [("provers", prover), ("learn", "false"), ("timeout", "60"), ("preplay_timeout", "10")]
@@ -226,17 +252,21 @@ fun hammer (prover, preplayed) =
       Sledgehammer.run_sledgehammer params Sledgehammer_Prover.Normal (SOME (K ())) 1
         Sledgehammer_Fact.no_fact_override state
   in
-    check ("sledgehammer with " ^ prover)
+    check ("sledgehammer with " ^ prover ^ " and " ^ name)
       (not (Sledgehammer_Prover_Minimize.is_prover_installed ctxt prover) orelse
        (case outcome of
          Sledgehammer.SH_Some ({used_facts, ...}, preplay_results) =>
-           AList.defined (op =) used_facts "QR[OF PQ[OF P7]]" andalso
+           AList.defined (op =) used_facts name andalso
            (not preplayed orelse
             exists (fn (_, (Sledgehammer_Proof_Methods.Played _, _)) => true | _ => false)
               preplay_results)
        | _ => false))
   end
-val _ = List.app hammer [("e", true), ("cvc5", true), ("metis", false)]
+val _ = List.app hammer
+  [("e", true, "QR[OF PQ[OF P7]]"), ("cvc5", true, "QR[OF PQ[OF P7]]"),
+   ("metis", false, "QR[OF PQ[OF P7]]"),
+   (*several attributes: metis parses the text that Try0 prints for the fact*)
+   ("metis", false, "QR[OF PQ, of 7, OF P7]")]
 \<close>
 
 end

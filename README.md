@@ -14,7 +14,7 @@ This package changes Isabelle2026 only.
 
 MePo works in rounds. In each round it accepts the facts that share enough constants with the goal
 and with the facts accepted so far; the constants of the accepted facts then count as relevant in
-the next round. A trigger is called once before the first round and once after every round:
+the next round. A trigger is called before every round:
 
 ```ML
 Sledgehammer_MePo.add_trigger :
@@ -26,7 +26,8 @@ type trigger_input =
   {ctxt       : Proof.context,
    hyp_ts     : term list,                 (* the premises of the goal *)
    concl_t    : term,                      (* the conclusion of the goal *)
-   new_consts : string list,               (* the constants that became relevant in this round *)
+   new_consts : string list,               (* the names whose entry in rel_consts changed in the
+                                              last round, or all of them before the first round *)
    rel_consts : ptype list Symtab.table,   (* all relevant constants, with their type instances *)
    accepted   : lazy_fact list}            (* the facts accepted so far, most recent first *)
 
@@ -36,9 +37,17 @@ type candidate =
    stature : stature}
 ```
 
-MePo scores a candidate like any other fact. It evaluates `name` only when it accepts the
+Besides constants, these names include free variables and MePo's pseudo-constants, and a name
+appears again whenever it gains a new type instance.
+
+MePo scores a candidate like a fact of the current theory. Candidates whose `prop` is the same up
+to renaming of schematic variables count once. MePo evaluates `name` only when it accepts the
 candidate, and the expression must then denote exactly one theorem. `prop` is not compared with
 that theorem. A trigger should return at once when `new_consts` holds nothing it cares about.
+
+A trigger must be a pure function: MePo runs in parallel with MaSh. An exception raised by a
+trigger, or a candidate that does not evaluate to exactly one theorem, stops Sledgehammer with an
+error.
 
 For example, this trigger offers `PQ[OF P7]` as soon as the constant `Q` becomes relevant:
 
