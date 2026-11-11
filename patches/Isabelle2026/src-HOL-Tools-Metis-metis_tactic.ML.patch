@@ -1,0 +1,129 @@
+diff --git a/src/HOL/Tools/Metis/metis_tactic.ML b/src/HOL/Tools/Metis/metis_tactic.ML
+index c4c0414..76061a6 100644
+--- a/src/HOL/Tools/Metis/metis_tactic.ML
++++ b/src/HOL/Tools/Metis/metis_tactic.ML
+@@ -26,6 +26,8 @@ sig
+     thm list -> int -> thm -> ((thm * inst) list * (thm * inst) list) option
+   val metis_lam_transs : string list
+   val parse_metis_options : (string list option * string option) parser
++  val th_name_of_multi_thms : Proof.context -> (thm list * Token.T list) list -> thm ->
++    string option
+ end
+ 
+ structure Metis_Tactic : METIS_TACTIC =
+@@ -314,19 +316,68 @@ val no_th_name = K NONE
+ fun th_name_hint ths =
+   Option.filter (member Thm.eq_thm ths)
+   #> Option.map (Thm_Name.print o Thm.get_name_hint)
+-(* Use multi_thm with input string to get theorem name (only if part of multi_ths) *)
+-fun th_name_multi_thm ctxt multi_ths th =
++(* The name of a theorem that is among the arguments of the method, or else among its facts.
++   Each argument comes with the tokens that Attrib.multi_thm consumed for it. *)
++local
++
++val punctuation = ["[", "]", "(", ")", ":", ","]
++
++(*a space between two tokens unless one of them is punctuation; the text of a token is kept*)
++fun text_of_tokens toks =
+   let
+-    fun index_of_th ths = find_index (curry Thm.eq_thm th) ths + 1
+-    fun make_name ([_], name) = name
+-      (* This doesn't work if name already has attributes or is indexed,
+-       * but provides much more information than "??.unknown" name hint *)
+-      | make_name (ths, name) = name ^ "(" ^ string_of_int (index_of_th ths) ^ ")"
+-  in
+-    (case List.find (fn (ths, _) => member Thm.eq_thm ths th) multi_ths of
+-      SOME ths_name => SOME (make_name ths_name)
+-    | NONE => SOME (Global_Theory.print_thm_name ctxt (Thm.get_name_hint th)))
+-  end
++    fun text (tok1 :: (toks as tok2 :: _)) =
++          let val (s1, s2) = apply2 Token.unparse (tok1, tok2) in
++            s1 :: (if member (op =) punctuation s1 orelse member (op =) punctuation s2 then ""
++              else " ") :: text toks
++          end
++      | text [tok] = [Token.unparse tok]
++      | text [] = []
++  in implode (text toks) end
++
++(*name(i)[attributes] for the k-th theorem of an argument that yields several theorems: i is its
++  index in the whole fact, which is the value of the name token*)
++fun name_of_nth ths toks k =
++  \<^try>\<open>
++    let
++      val name_tok :: toks' = toks
++      val SOME (Token.Fact (_, whole)) = Token.get_value name_tok
++      val (selection, attrib_toks) = Scan.finite Token.stopper (Scan.option Parse.thm_sel) toks'
++      val indexes =
++        (case selection of
++          NONE => 1 upto length ths
++        | SOME intervals => Try0_Util.indexes_of_selection (length whole) intervals)
++    in
++      Token.unparse name_tok ^
++      Facts.string_of_selection (SOME [Facts.Single (nth indexes k)]) ^
++      text_of_tokens attrib_toks
++    end
++    catch _ => text_of_tokens toks ^ enclose "(" ")" (string_of_int (k + 1))\<close>
++
++(*the name that the name hint gives, if it denotes this very theorem in the context*)
++fun name_of_hint ctxt th =
++  \<^try>\<open>
++    let
++      val (name, i) = Thm.get_name_hint th
++      val xref =
++        Facts.Named ((#2 (Proof_Context.markup_extern_fact ctxt name), Position.none),
++          if i = 0 then NONE else SOME [Facts.Single i])
++    in
++      (case Proof_Context.get_fact ctxt xref of
++        [th'] =>
++          if Thm.eq_thm (th, th') then SOME (Try0_Util.string_of_xref' ctxt (xref, [])) else NONE
++      | _ => NONE)
++    end
++    catch _ => NONE\<close>
++
++in
++
++fun th_name_of_multi_thms ctxt multi_ths th =
++  (case List.find (fn (ths, _) => member Thm.eq_thm ths th) multi_ths of
++    SOME ([_], toks) => SOME (text_of_tokens toks)
++  | SOME (ths, toks) => SOME (name_of_nth ths toks (find_index (curry Thm.eq_thm th) ths))
++  | NONE => name_of_hint ctxt th)
++
++end
+ 
+ (* Metis tactic to prove a subgoal and optionally instantiations *)
+ fun metis_tac' th_name type_encs lam_trans ctxt nonschem_usings schem_usings arg_thms i =
+@@ -369,9 +420,9 @@ fun metis_method' th_name ((override_type_encs, lam_trans), ths) ctxt facts =
+ (* Metis method without theorem name, therefore won't suggest instantiations *)
+ val metis_method = metis_method' no_th_name
+ 
+-(* Metis method with input strings for better theorem names in of-instantiations *)
++(* Metis method with input tokens for better theorem names in of-instantiations *)
+ fun metis_method_multi_thms (opts, multi_ths) ctxt =
+-  metis_method' (th_name_multi_thm ctxt multi_ths) (opts, maps fst multi_ths) ctxt
++  metis_method' (th_name_of_multi_thms ctxt multi_ths) (opts, maps fst multi_ths) ctxt
+ 
+ (* Use Metis to infer variable instantiations of theorems *)
+ fun metis_infer_thm_insts ((override_type_encs, lam_trans), ths) ctxt facts i =
+@@ -409,21 +460,10 @@ val parse_metis_options =
+                            |> (case s' of SOME s' => consider_opt s' | _ => I)))
+       (NONE, NONE)
+ 
+-(* Parse multi_thm with input string *)
+-val parse_multi_thm =
+-  let
+-    (* Remove spaces before and after "[]():," *)
+-    val strip_spaces =
+-      ATP_Util.strip_spaces false (not o member (op =) (String.explode "[]():,"))
+-  in
+-    ATP_Util.scan_and_trace_multi_thm
+-      >> apsnd (map Token.unparse #> implode_space #> strip_spaces)
+-  end
+-
+ val _ =
+   Theory.setup
+     (Method.setup \<^binding>\<open>metis\<close>
+-      (Scan.lift parse_metis_options -- Scan.repeat parse_multi_thm
++      (Scan.lift parse_metis_options -- Scan.repeat ATP_Util.scan_and_trace_multi_thm
+         >> (METHOD oo metis_method_multi_thms))
+       "Metis for FOL and HOL problems")
+ 

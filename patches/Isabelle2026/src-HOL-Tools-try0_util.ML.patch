@@ -1,16 +1,17 @@
 diff --git a/src/HOL/Tools/try0_util.ML b/src/HOL/Tools/try0_util.ML
-index e9800e6..3144641 100644
+index e9800e6..0a95d22 100644
 --- a/src/HOL/Tools/try0_util.ML
 +++ b/src/HOL/Tools/try0_util.ML
-@@ -9,6 +9,7 @@ General-purpose functions used by Try0.
+@@ -9,6 +9,8 @@ General-purpose functions used by Try0.
  signature TRY0_UTIL =
  sig
    val string_of_xref : Try0.xref -> string
 +  val string_of_xref' : Proof.context -> Try0.xref -> string
++  val indexes_of_selection : int -> Facts.interval list -> int list
  
    type facts_config =
      {allows_directs : bool,
-@@ -28,12 +29,21 @@ end
+@@ -28,12 +30,25 @@ end
  
  structure Try0_Util : TRY0_UTIL = struct
  
@@ -30,15 +31,19 @@ index e9800e6..3144641 100644
 +    (case xref of
 +      Facts.Named (("", _), NONE) => enclose "[" "]" (if null args then "[]" else attribs)
 +    | Facts.Fact literal =>
-+        (literal |> Symbol_Pos.explode0 |> Symbol_Pos.implode |> cartouche) ^ attribs
++        cartouche (Input.string_of (Syntax.read_input literal)) ^ attribs
 +    | _ => Facts.string_of_ref (Facts.map_ref_name (Thy_Header.print_name' ctxt) xref) ^ attribs)
 +  end
 +
 +val string_of_xref = string_of_xref' \<^context>
++
++(*the indexes that a selection denotes in a fact of n theorems, in the order of the selection*)
++fun indexes_of_selection n =
++  maps (fn Facts.FromTo (i, j) => i upto j | Facts.From i => i upto n | Facts.Single i => [i])
  
  type facts_config =
    {allows_directs : bool,
-@@ -119,7 +129,7 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
+@@ -119,7 +134,7 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
        else
          (case #allows_directs facts_config of
            false => (#directs facts, "")
@@ -47,7 +52,7 @@ index e9800e6..3144641 100644
  
      val (unused_simps, simps_attrs) =
        if null (#simps facts) then
-@@ -127,7 +137,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
+@@ -127,7 +142,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
        else
          (case #simps_prefix facts_config of
            NONE => (#simps facts, "")
@@ -57,7 +62,7 @@ index e9800e6..3144641 100644
  
      val (unused_intros, intros_attrs) =
        if null (#intros facts) then
-@@ -135,7 +146,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
+@@ -135,7 +151,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
        else
          (case #intros_prefix facts_config of
            NONE => (#intros facts, "")
@@ -67,7 +72,7 @@ index e9800e6..3144641 100644
  
      val (unused_elims, elims_attrs) =
        if null (#elims facts) then
-@@ -143,7 +155,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
+@@ -143,7 +160,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
        else
          (case #elims_prefix facts_config of
            NONE => (#elims facts, "")
@@ -77,7 +82,7 @@ index e9800e6..3144641 100644
  
      val (unused_dests, dests_attrs) =
        if null (#dests facts) then
-@@ -151,7 +164,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
+@@ -151,7 +169,8 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
        else
          (case #dests_prefix facts_config of
            NONE => (#dests facts, "")
@@ -87,7 +92,7 @@ index e9800e6..3144641 100644
  
      val (unused_usings, using_attrs) =
        if null (#usings facts) then
-@@ -179,7 +193,7 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
+@@ -179,7 +198,7 @@ fun apply_raw_named_method (name : string) all_goals (facts_config: facts_config
      val num_after = num_goals st'
      val command =
        let
