@@ -1,0 +1,10 @@
+[submodule "worktrees/Isabelle2026-sledgehammer_fact_trigger"]
+	path = worktrees/Isabelle2026-sledgehammer_fact_trigger
+	url = https://github.com/xqyww123/isabelle-patched.git
+	branch = Isabelle2026/sledgehammer_fact_trigger
+	base = Isabelle2026/fast_abbrev_printing
+	ignore = all
+[submodule "worktrees/Isabelle2026-sledgehammer_fact_trigger-stock"]
+	path = worktrees/Isabelle2026-sledgehammer_fact_trigger-stock
+	url = https://github.com/xqyww123/isabelle-patched.git
+	ignore = all

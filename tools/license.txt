@@ -1,0 +1,2 @@
+# The package's SPDX license expression, read like the other lists.
+BSD-3-Clause
