@@ -1,0 +1,13 @@
+(* The test session of sledgehammer_fact_trigger: build it with an extra
+   "-d contrib/sledgehammer_fact_trigger/tests". *)
+
+session Sledgehammer_Fact_Trigger_Test = HOL +
+  description "
+    Checks of Sledgehammer fact triggers: generated candidates in MePo's result, their evaluation
+    and the two error messages, merging with other fact filters, and proofs that name a fact by an
+    Isar fact expression with nested attributes.  Any failing check fails the build.
+  "
+  options [timeout = 600]
+  theories
+    Sledgehammer_Fact_Trigger_Test
+    Readme_Example

@@ -1,0 +1,7 @@
+# Sessions to build on the commit to release, before make-patches (SKILL isabelle-patch-feature,
+# section 3.4 step 4).  One per line; # starts a comment.
+# HOL because the patched files are loaded by HOL.Try0 and HOL.Sledgehammer;
+# Sledgehammer_Fact_Trigger_Test is the test session (tests/ROOT: build it with an extra
+# "-d contrib/sledgehammer_fact_trigger/tests").
+HOL
+Sledgehammer_Fact_Trigger_Test

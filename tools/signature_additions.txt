@@ -1,0 +1,15 @@
+# Every signature entry sledgehammer_fact_trigger adds to an .ML file, as
+# `<path> <SIGNATURE NAME> <keyword> <name>` (check-signatures).
+src/HOL/Tools/Sledgehammer/sledgehammer_fact.ML SLEDGEHAMMER_FACT val normalize_vars
+src/HOL/Tools/Sledgehammer/sledgehammer_mash.ML SLEDGEHAMMER_MASH val mesh_facts_with_mepo
+src/HOL/Tools/Sledgehammer/sledgehammer_mash.ML SLEDGEHAMMER_MASH val insert_generated_facts
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO type ptype
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO val typargs_of_ptype
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO type candidate
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO type trigger_input
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO type trigger
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO val add_trigger
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO datatype origin
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML SLEDGEHAMMER_MEPO val mepo_suggested_facts_with_origin
+src/HOL/Tools/Sledgehammer/sledgehammer_util.ML SLEDGEHAMMER_UTIL val xref_of_name
+src/HOL/Tools/try0_util.ML TRY0_UTIL val string_of_xref'

@@ -1,0 +1,6 @@
+src/HOL/Tools/Sledgehammer/sledgehammer_fact.ML
+src/HOL/Tools/Sledgehammer/sledgehammer_mash.ML
+src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML
+src/HOL/Tools/Sledgehammer/sledgehammer_prover_tactic.ML
+src/HOL/Tools/Sledgehammer/sledgehammer_util.ML
+src/HOL/Tools/try0_util.ML
