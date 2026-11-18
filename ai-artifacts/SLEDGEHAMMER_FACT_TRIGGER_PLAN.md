@@ -1,6 +1,7 @@
 # Sledgehammer fact trigger 计划
 
-状态：已实现并发布，当前版本 `isabelle-sledgehammer-fact-trigger 2026.0.2`（现状见 13.7）。
+状态：已实现并发布，当前版本 `isabelle-sledgehammer-fact-trigger 2026.0.3`（现状见 13.8）。
+第 3 个发布的修改有自己的方案文档 `RELEASE_3_REPAIR_PLAN.md`（同目录），以它为准。
 设计稿 rev 3，2026-11-11（UTC）定稿；实现期间作者改定的地方已并入各节（5 节第 3 处修法等）。rev 1 和 rev 2 各经过一轮对抗评审
 （结论都是「修改后接受」），本稿已并入两轮的结论和作者的决定。第二轮没有发现设计缺陷，只补了
 说明和测试；作者定不再评第三轮。评审记录见第 12 节。
@@ -450,7 +451,30 @@ Sledgehammer 面板；`sledgehammer learn_prover` / `relearn_prover`；ML 直接
   做法，不为触发器破例。
 - `auto_sledgehammer` 的 `raw_sledgehammer`：见 6.4，要改。
 
-原先未确定、2026-11-10 发布之后查明的四项（本节其余内容仍是【未核实】的静态分析）：
+**2026-11-11 晚核实的各项**（作者下令；运行的探针在 private tree 里跑，带真实的触发器；探针在
+MLML 仓库的 `ai-artifacts/sh_trigger_error_probe/` 下的 `g_ml`、`g_try`、`g_learn`，不提交）。
+本节开头那段静态分析的各条，现在的依据如下：
+
+| 入口 | 结果 | 依据 |
+|---|---|---|
+| ML 里直接调用 `Sledgehammer.run_sledgehammer` | 候选求值失败：4.4 的文案原文作为 `ERROR` 到达。触发器自己抛 `Option`：原样到达 | 【实测】 |
+| `Sledgehammer_Tactics.sledgehammer_with_metis_tac` | 文案原文作为 `ERROR` 到达 | 【实测】 |
+| `Sledgehammer_MaSh.relevant_facts`（经 `Par_List.map`） | 触发器自己抛的 `Option` 原样到达；MaSh 没学过（只有 MePo 一支）和学过（两支并行）两种情况都如此。候选求值失败时文案原文到达 | 【实测】 |
+| `sledgehammer learn_prover` | 会话构建失败，文案原文显示在 `sledgehammer` 命令处。触发器在报错前被调用了十一次：被学习的定理各自作目标，候选只在被接受时才求值 | 【实测】 |
+| `try` 命令 | 报错被吞掉：触发器被调用了，会话构建成功、没有任何报错。原因是 `Try.try_tools` 里的 `try (body false) state` | 【实测】加【读码】 |
+| 自动 Sledgehammer（`auto_sledgehammer` 选项，`Tools/try.ML` 的 print function） | 报错被吞掉：`\<^try>\<open>… catch _ => ()\<close>` | 【读码】 |
+| Sledgehammer 面板 | 报错显示在面板里：`Query_Operation.register` 用 `Exn.capture_body` 接住任何异常，以 `Runtime.exn_message` 的文本作为错误消息输出 | 【读码】，没有在 jEdit 里跑 |
+| MaSh 的后台学习线程 | 不调用 MePo：`relevant_facts` 起后台线程时给 `mash_learn_facts` 传的 `run_prover` 是 `false`，`prover_dependencies_of` 只在它为 `true` 时调用 | 【读码】 |
+| AutoCorrode 的 `iq/Isar_Explore.thy` | 把 `mepo_suggested_facts` 包在 `handle ERROR _ => []` 里，4.4 的报错在那里被丢掉 | 【读码】 |
+| Isa-REPL 的前提选择（`library/premise_selection.ML`） | 三处调用 `relevant_facts`，该文件里没有异常处理器；异常传到 REPL 的请求循环，那里怎样回报没有跑 | 【读码】 |
+| `auto_sledgehammer` 的 `raw_sledgehammer` 方法 | 候选求值失败：文案原文显示在 `apply` 命令处（6.4 的改动 `2ccead2` 第一次用真实的触发器验证；此前只用不存在的 prover 替代验证过） | 【实测】 |
+| `auto_sledgehammer` 的 `fast_mepo` 方法 | 有局部事实时：文案原文显示在 `apply` 命令处。**没有局部事实时 MePo 根本不被调用**（`fast_mepo_tac` 只把局部事实交给 MePo，候选池为空就跳过），触发器不运行，方法以普通的 `Failed to apply proof method` 失败 | 【实测】，两种情况各跑了一次 |
+| `by auto_sledgehammer`，触发器给出可用的事实 | 证出只能靠生成事实证明的目标。它存下的证明是 `(Auto_Sledgehammer.pre_simproc_on_concl, (-, (insert QR [ "OF" PQ [ OF P7 ] ] or_not_num_neg.simps ( 3 ))[1], simp))[1]`：生成事实的名字带着嵌套属性进了它的证明文本，并通过了它自己的重放 | 【实测】 |
+
+`auto_sledgehammer` 这三行的探针是 `g_auto1`、`g_auto2`、`g_auto3`；为跑它们在 private tree 里
+建了 `Performant_Isabelle_HOL` 和 `Auto_Sledgehammer` 两个会话（约 30 秒）。
+
+2026-11-10 发布之后查明的四项：
 
 - **Isa-REPL**：【实测，用了替代品】`sledgehammer` 命令内部抛出的 `ERROR` 能到达客户端。
   做法：在共享树上起一个 REPL 服务器，执行
@@ -682,7 +706,60 @@ MLML 仓库的 `ai-artifacts/sh_name_probe/`（未提交）：
 
 7 节的静态分析和两轮评审的明细都只在设计会话的记录里，结论已写进本文件。
 
-### 13.7 第 2 个发布之后的状态（2026-11-11，本地时间；以本小节为准）
+### 13.8 第 3 个发布之后的状态（2026-11-11，本地时间；以本小节为准）
+
+**当前版本**：`isabelle-sledgehammer-fact-trigger 2026.0.3`（build `Isabelle2026_0`）在 conda 频道上；
+`2026.0.1`、`2026.0.2` 留在频道上不删。发布标签 `Isabelle2026/sledgehammer_fact_trigger/3`：private
+tree 在 `7de251e`，feature repository 在 `045e1a1`。试运行 `43112498412`，正式发布 `43119657199`，
+都全绿，三个平台上测试会话都通过。
+
+第 3 版修的是同一类问题：把事实引用写成文本时，写出了 Isar 读不回同一个事实的东西。内容、
+每处的实测结果、三轮评审的记录，都在 `RELEASE_3_REPAIR_PLAN.md`。要点：
+
+- 被补丁的文件从六个变成七个，新增 `src/HOL/Tools/Metis/metis_tactic.ML`。
+- 新增三个签名条目：`Try0_Util.indexes_of_selection`、`Sledgehammer_Util.add_attribs_to_name`、
+  `Metis_Tactic.th_name_of_multi_thms`。
+- 行为变化（作者定）：用户在 `sledgehammer (…)` 里列出的多定理事实，其定理按书写顺序交给
+  prover；原版和前两版是倒序。
+- 13.7 末尾列的「原版 `fact_of_ref` 起名」那一项在这一版修掉了。当时那里把触发它的写法说成
+  `sledgehammer (add: …)`，是错的：`fact_of_ref` 只在不带 `add:` 的事实列表写法下运行。
+- 测试会话新增 theory `Fact_Reference_Test`。
+
+提交：private tree `b44da0d`（修改）、`7de251e`（两条注释）；feature repository `47e87f0`
+（测试、包清单、维修方案）、`045e1a1`（补丁）；`isabelle-packaging-ci` 的 `81f858e`
+（`ROLLOUT_STATUS.md`）。
+
+与这次发布一起发生的：
+- **补丁工具 `isabelle-patch-control 1.1.0` 随这一批一起发布**（作者下令）。发布流程每次从补丁
+  工具仓库的 `main` 构建工具，频道上没有同版本就新建；`main` 当时已是 1.1.0（别的会话的工作：
+  一个 feature 可以直接建在多个 feature 上；`features` 输入改为 `<GitHub 仓库>@<发布标签>`；
+  流程里不再有 feature 表）。本包因此要求 `isabelle-patch-control >=1.1,<2`，前两版要求
+  `>=1.0,<2`。
+- **`default_fact_qualifiers` 的 base 迁移由本会话代做**（它的会话已退出，作者下令）：合并第 3
+  版，它的分支在 `e0b9191`，已推送；在它的树里 HOL、它的测试会话、本 feature 的测试会话都
+  建成，两个 feature 叠在一起没有相互影响。它没有在新 base 上发布：它的标签 `…/1` 建在本
+  feature 的第 2 版上，从未上过频道。
+
+下游：`light_locale`（会话 `Minilang Upgrading`）已被告知合并第 3 版。它和
+`default_fact_qualifiers` 各自发布之后，本 feature 才进入 `daily`。
+
+**作者 2026-11-11 晚的决定：下面第一项必须修，为此出第 4 版。** 整理稿在同目录的
+`RELEASE_4_PLAN.md`，以它为准；压缩之后从那里接着做。
+
+**第 3 版没有修的已知问题**（详见维修方案第 4 节）：
+- `auto`、`fastforce`、`force` 作为 Sledgehammer 的 prover 时，拿到全局事实的尝试必然失败。
+  这是 Isabelle2026 原版的行为（Try0 把全局事实写在方法名后面，这三个方法不接受），本 feature
+  三个版本都没有碰它。后果之一：触发器生成的全局事实对这三个 prover 无效；对 ATP、SMT、
+  `metis` 等有效。改它会改变所有默认配置下 Sledgehammer 的行为，作者 2026-11-11 表示这类
+  行为变化不能擅自做，所以不在范围内。
+- 维修方案 4.2 的 N1–N4。
+
+这三个版本隔一天半出完，第 2、3 版都是为同一类问题补的，并连累 `default_fact_qualifiers`
+返工。原因：第 1 版发布前跳过了对自决修改的再评审；发现一处问题时只修被点名的那一处，没有
+先查同类。第 3 版的做法（先全面扫描；先做草稿实现并跑通，再据实写方案；方案和代码过评审后
+才发布；发布前把「已知而不修的」逐条请作者确认）是以后改这个 feature 时要照做的。
+
+### 13.7 第 2 个发布之后的状态（2026-11-11，本地时间；已被 13.8 取代）
 
 **当前版本**：`isabelle-sledgehammer-fact-trigger 2026.0.2`（build `Isabelle2026_0`）在 conda 频道上；
 `2026.0.1` 留在频道上不删。发布标签 `Isabelle2026/sledgehammer_fact_trigger/2`：private tree 在

@@ -308,6 +308,9 @@ Found variable instantiations, try this: by (metis P7 imps(1)[of "7"] imps(2)[of
 
 ### 4.1 M7 `auto`、`fastforce`、`force` 拿到 direct 类事实 【已定：不纳入】
 
+（2026-11-11 晚补记：第 3 版发布之后，作者决定这一项必须修，并为此出第 4 版，见同目录的
+`RELEASE_4_PLAN.md`。本小节记的是第 3 版当时的范围。）
+
 作者 2026-11-11：「走 using 必须依旧走 using，不能擅自改动！这个行为变化会很大的！」
 
 记录事实，供以后单独立项：Sledgehammer 的 tactic prover 把全局事实放进 direct 类；Try0 对这

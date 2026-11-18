@@ -5,9 +5,14 @@ session Sledgehammer_Fact_Trigger_Test = HOL +
   description "
     Checks of Sledgehammer fact triggers: generated candidates in MePo's result, their evaluation
     and the two error messages, merging with other fact filters, and proofs that name a fact by an
-    Isar fact expression with nested attributes.  Any failing check fails the build.
+    Isar fact expression with nested attributes; and checks of the tactic provers of Sledgehammer.
+    Any failing check fails the build.
   "
-  options [timeout = 600]
+  (* timeout_scale gives every time limit room on a slow machine, also the 0.01 s that Sledgehammer
+     allows for instantiating an induction rule; the session's limit is timeout * timeout_scale.
+     MaSh is off: Sledgehammer learns from chained facts whatever "learn" says, and a loaded MaSh
+     state changes the fact filter of every later call. *)
+  options [timeout = 120, timeout_scale = 5, MaSh = "none"]
   theories
     Sledgehammer_Fact_Trigger_Test
     Readme_Example

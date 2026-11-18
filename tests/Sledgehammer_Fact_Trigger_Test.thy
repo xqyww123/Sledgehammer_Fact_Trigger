@@ -17,6 +17,8 @@ axiomatization where
   PQf [no_atp]: "P x \<Longrightarrow> Q (f x)" and
   QZ: "Q x \<Longrightarrow> Z 0 \<Longrightarrow> R x"
 
+lemmas both = PQ QR
+
 ML \<open>
 open Sledgehammer_MePo
 
@@ -144,8 +146,23 @@ val _ = check "no unifiers"
    andalso forall (fn s => String.isSubstring s msg) ["OF: no unifiers", "Q ?x \<Longrightarrow> R ?x", "P 7"])
 
 val _ = check "two theorems"
-  (error_of (on_const \<^const_name>\<open>R\<close> [cand "PQ QR" goal]) =
-    "Sledgehammer fact trigger \"toy\": the candidate PQ QR evaluates to 2 theorems, but exactly one is expected.")
+  (error_of (on_const \<^const_name>\<open>R\<close> [cand "both" goal]) =
+    "Sledgehammer fact trigger \"toy\": the candidate both evaluates to 2 theorems, but exactly one is expected.")
+
+(*a name is one fact reference, as the provers read it*)
+val _ = check "two references"
+  (String.isPrefix
+    "Sledgehammer fact trigger \"toy\": the candidate PQ QR cannot be evaluated:\n"
+    (error_of (on_const \<^const_name>\<open>R\<close> [cand "PQ QR" goal])))
+
+val _ = check "two references that give one theorem"
+  (String.isPrefix
+    "Sledgehammer fact trigger \"toy\": the candidate PQ nothing cannot be evaluated:\n"
+    (error_of (on_const \<^const_name>\<open>R\<close> [cand "PQ nothing" goal])))
+
+val _ = check "no theorem"
+  (error_of (on_const \<^const_name>\<open>R\<close> [cand "nothing" goal]) =
+    "Sledgehammer fact trigger \"toy\": the candidate nothing evaluates to 0 theorems, but exactly one is expected.")
 
 (*an exception of the trigger itself passes through*)
 val _ = check "exception of the trigger"
@@ -181,6 +198,37 @@ in
     (eq_facts (mesh_facts_with_mepo \<^context> 64 (0.5, plain) [(0.5, (other, []))],
        stock_mesh [(0.5, (weight_facts_steeply (map fst plain), [])), (0.5, (other, []))])
      andalso eq_facts (insert_generated_facts plain (map fst other), map fst other))
+end
+\<close>
+
+ML \<open>
+(*the fact lists that relevant_facts gives for the results of MePo and MaSh*)
+local
+  open Sledgehammer_MaSh
+  val stature = (ATP_Problem_Generate.Global, ATP_Problem_Generate.General)
+  fun fact name th : Sledgehammer_Fact.fact = ((name, stature), th)
+  val (f1, f2, f3) = (fact "PQ" @{thm PQ}, fact "QR" @{thm QR}, fact "QZ" @{thm QZ})
+  val generated = fact "QR[OF PQ[OF P7]]" @{thm QR[OF PQ[OF P7]]}
+  val mepo_result = [(f1, From_Pool), (generated, From_Trigger), (f2, From_Pool)]
+  val mash_result = (weight_facts_steeply [f3, f2, f1], [])
+  fun lists fact_filter effective_fact_filter results =
+    facts_of_filter_results \<^context> 64 fact_filter effective_fact_filter results
+    |> map (apsnd (map (fst o fst)))
+  val three = lists NONE "mesh" (SOME mepo_result, SOME mash_result)
+  val in_mepo = ["PQ", "QR[OF PQ[OF P7]]", "QR"]
+in
+  val _ = check "three lists" (map fst three = ["mesh", "mepo", "mash"])
+  val _ = check "the list of MePo" (AList.lookup (op =) three "mepo" = SOME in_mepo)
+  val _ = check "the list of MaSh, with the generated fact at its MePo index"
+    (AList.lookup (op =) three "mash" = SOME ["QZ", "QR[OF PQ[OF P7]]", "QR", "PQ"])
+  val _ = check "the meshed list"
+    (eq_set (op =) (the (AList.lookup (op =) three "mesh"), "QZ" :: in_mepo))
+  val _ = check "fact_filter = mesh"
+    (lists (SOME "mesh") "mesh" (SOME mepo_result, SOME mash_result) =
+      [("mesh", the (AList.lookup (op =) three "mesh"))])
+  val _ = check "MePo alone" (lists NONE "mepo" (SOME mepo_result, NONE) = [("mepo", in_mepo)])
+  val _ = check "fact_filter = mash"
+    (lists (SOME "mash") "mash" (NONE, SOME mash_result) = [("mash", ["QZ", "QR", "PQ"])])
 end
 \<close>
 
@@ -239,6 +287,55 @@ val _ = check "try0 simp"
     SOME "using QR[\"OF\" PQ [ OF P7 ]] by simp")
 \<close>
 
+
+section \<open>The input of a trigger\<close>
+
+ML \<open>
+(*several triggers all run; a trigger registered under the name of another replaces it*)
+val two_triggers =
+  Context.proof_map
+    (add_trigger "a" (on_const \<^const_name>\<open>R\<close> [cand "QR[OF PQ[OF P7]]" goal]) #>
+     add_trigger "b" (on_const \<^const_name>\<open>Q\<close> [cand "PQ[OF P7]" \<^prop>\<open>Q 7\<close>])) \<^context>
+val _ = check "two triggers"
+  (eq_set (op =) (map #2 (generated (mepo two_triggers 64 goal)), ["QR[OF PQ[OF P7]]", "PQ[OF P7]"]))
+val _ = check "a replaced trigger"
+  (map #2 (generated (mepo (Context.proof_map (add_trigger "a" (K [])) two_triggers) 64 goal)) =
+    ["PQ[OF P7]"])
+
+(*what a trigger is given, call by call*)
+val inputs = Synchronized.var "inputs" ([] : trigger_input list)
+val _ =
+  mepo (with_trigger (fn input => (Synchronized.change inputs (cons input); [])) \<^context>) 64
+    \<^prop>\<open>P 3 \<Longrightarrow> R 7\<close>
+val calls = rev (Synchronized.value inputs)
+fun accepted_names ({accepted, ...} : trigger_input) = map (fn ((name, _), _) => name ()) accepted
+val _ = writeln (cat_lines (map (fn call as {new_consts, ...} =>
+  "new_consts: " ^ commas new_consts ^ "; accepted: " ^ commas (take 5 (accepted_names call)))
+  calls))
+val _ = check "a call before the first round and one before each later round" (length calls >= 2)
+val _ = check "the goal"
+  (forall (fn {hyp_ts, concl_t, ...} => hyp_ts = [\<^prop>\<open>P 3\<close>] andalso concl_t aconv goal) calls)
+val _ = check "before the first round"
+  (case calls of
+    (call as {new_consts, rel_consts, ...}) :: _ =>
+      null (accepted_names call) andalso
+      eq_set (op =) (new_consts, Symtab.keys rel_consts) andalso
+      subset (op =) ([\<^const_name>\<open>P\<close>, \<^const_name>\<open>R\<close>], new_consts)
+  | [] => false)
+val _ = check "later rounds: the accepted facts, most recent first"
+  (forall (fn (earlier, later) =>
+      is_prefix (op =) (rev (accepted_names earlier)) (rev (accepted_names later)) andalso
+      length (accepted_names earlier) < length (accepted_names later))
+    (take (length calls - 1) calls ~~ tl calls) andalso
+   member (op =) (accepted_names (List.last calls)) "QZ")
+val _ = check "later rounds: new_consts are in rel_consts"
+  (forall (fn {new_consts, rel_consts, ...} => forall (Symtab.defined rel_consts) new_consts) calls
+   andalso exists (fn {new_consts, ...} => member (op =) new_consts \<^const_name>\<open>Q\<close>) (tl calls))
+\<close>
+
+
+section \<open>Sledgehammer with a generated fact\<close>
+
 ML \<open>
 (*Sledgehammer finds a proof that uses the generated fact; for an automatic prover, a one-line
   proof with that fact is preplayed.  A prover is skipped where it is not installed.*)
@@ -267,6 +364,52 @@ val _ = List.app hammer
    ("metis", false, "QR[OF PQ[OF P7]]"),
    (*several attributes: metis parses the text that Try0 prints for the fact*)
    ("metis", false, "QR[OF PQ, of 7, OF P7]")]
+\<close>
+
+text \<open>
+  The tactic provers of Sledgehammer, through \<open>Sledgehammer.run_sledgehammer\<close>: the messages of a run
+  that proves the given subgoal with the facts of the triggers \<open>cands\<close>.
+\<close>
+
+ML \<open>
+fun hammer_messages overrides cands subgoal props =
+  let
+    val ctxt = with_trigger (on_const \<^const_name>\<open>R\<close> cands) \<^context>
+    val state = Proof.theorem NONE (K I) [map (rpair []) props] ctxt
+    val params = Sledgehammer_Commands.default_params \<^theory>
+      ([("learn", "false"), ("timeout", "60")] @ overrides)
+    val messages = Synchronized.var "messages" ([] : string list)
+    val _ =
+      Sledgehammer.run_sledgehammer params Sledgehammer_Prover.Normal
+        (SOME (fn msg => Synchronized.change messages (cons (Protocol_Message.clean_output msg))))
+        subgoal Sledgehammer_Fact.no_fact_override state
+  in rev (Synchronized.value messages) end
+
+(*all pieces in one message: the minimizer may leave a fact that is not needed in the using
+  clause*)
+fun shows texts = exists (fn msg => forall (fn text => String.isSubstring text msg) texts)
+
+(*no test of this session loads or changes a MaSh state*)
+val _ = check "MaSh is off" (not (Sledgehammer_MaSh.is_mash_enabled ()))
+
+(*auto and fastforce take the generated fact, which is global, by "using"*)
+val _ =
+  ["auto", "fastforce"] |> List.app (fn prover =>
+    check ("sledgehammer with " ^ prover)
+      (shows ["using ", "QR[\"OF\" PQ [ OF P7 ]]", " by " ^ prover]
+        (hammer_messages [("provers", prover)] [cand "QR[OF PQ[OF P7]]" goal] 1 [goal])))
+
+(*a tactic prover works on the subgoal that it is asked for*)
+val _ = check "sledgehammer on subgoal 2"
+  (shows ["prefer 2 using ", "QR[\"OF\" PQ [ OF P7 ]]", " apply simp"]
+    (hammer_messages [("provers", "simp")] [cand "QR[OF PQ[OF P7]]" goal] 2 [\<^prop>\<open>True\<close>, goal]))
+
+(*instantiations are asked for and the one-line proof with them is not played: the command that
+  Try0 ran is shown*)
+val _ = check "sledgehammer with instantiate and no preplay"
+  (shows ["using ", "QR[\"OF\" PQ]", " by simp"]
+    (hammer_messages [("provers", "simp"), ("instantiate", "true"), ("preplay_timeout", "0")]
+      [cand "QR[OF PQ]" (Logic.varify_global \<^prop>\<open>P x \<Longrightarrow> R x\<close>)] 1 [\<^prop>\<open>P 7 \<Longrightarrow> R 7\<close>]))
 \<close>
 
 end
