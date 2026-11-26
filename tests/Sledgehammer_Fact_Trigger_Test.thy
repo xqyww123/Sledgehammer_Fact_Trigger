@@ -17,8 +17,6 @@ axiomatization where
   PQf [no_atp]: "P x \<Longrightarrow> Q (f x)" and
   QZ: "Q x \<Longrightarrow> Z 0 \<Longrightarrow> R x"
 
-lemmas both = PQ QR
-
 ML \<open>
 open Sledgehammer_MePo
 
@@ -39,8 +37,13 @@ fun mepo ctxt max_facts goal =
 
 fun with_trigger trigger = Context.proof_map (add_trigger "toy" trigger)
 
+val stature = (ATP_Problem_Generate.Global, ATP_Problem_Generate.General)
+
+(*a candidate whose theorem is what its name denotes here*)
 fun cand name prop : candidate =
-  {name = name, prop = prop, stature = (ATP_Problem_Generate.Global, ATP_Problem_Generate.General)}
+  {name = K name,
+   thm = Lazy.lazy (fn () => the_single (Sledgehammer_Util.thms_of_name \<^context> name)),
+   prop = prop, stature = stature}
 
 fun on_const c cands : trigger = fn {new_consts, ...} =>
   if member (op =) new_consts c then cands else []
@@ -66,9 +69,19 @@ val _ = check "later round"
 val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close> [cand "QR[OF PQ[OF P7]]" goal]) \<^context>) 64 goal
 val _ = check "before round 0" (map #2 (generated res) = ["QR[OF PQ[OF P7]]"])
 
-(*a candidate that MePo rejects is never evaluated*)
-val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close> [cand "no_such_fact" unrelated]) \<^context>) 64 goal
+(*of a candidate that MePo rejects, neither the theorem is forced nor the name printed*)
+val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+  [{name = fn () => error "The name is printed", thm = Lazy.lazy (fn () => error "The theorem is forced"),
+    prop = unrelated, stature = stature}]) \<^context>) 64 goal
 val _ = check "rejected candidate" (null (generated res))
+
+(*the theorem of an accepted candidate is the one that the trigger hands over: the text of its
+  name is not evaluated*)
+val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+  [{name = K "no_such_fact", thm = Lazy.value @{thm QR[OF PQ[OF P7]]}, prop = goal,
+    stature = stature}]) \<^context>) 64 goal
+val _ = check "the theorem that the trigger hands over"
+  (case generated res of [(_, "no_such_fact", t)] => t aconv goal | _ => false)
 
 (*the same proposition from every round and from two expressions: one fact*)
 val res = mepo (with_trigger (fn _ =>
@@ -135,34 +148,18 @@ fun error_of trigger =
   (mepo (with_trigger trigger \<^context>) 64 goal; "")
     handle ERROR msg => Protocol_Message.clean_output msg
 
-val _ = check "undefined fact"
-  (String.isPrefix
-    "Sledgehammer fact trigger \"toy\": the candidate no_such_fact cannot be evaluated:\nUndefined fact"
+(*an exception raised while the theorem of an accepted candidate is forced passes through as it
+  is*)
+val _ = check "exception of the theorem"
+  (String.isPrefix "Undefined fact"
     (error_of (on_const \<^const_name>\<open>R\<close> [cand "no_such_fact" goal])))
 
-val msg = error_of (on_const \<^const_name>\<open>R\<close> [cand "QR[OF P7]" goal])
-val _ = check "no unifiers"
-  (String.isPrefix "Sledgehammer fact trigger \"toy\": the candidate QR[OF P7] cannot be evaluated:\n" msg
-   andalso forall (fn s => String.isSubstring s msg) ["OF: no unifiers", "Q ?x \<Longrightarrow> R ?x", "P 7"])
-
-val _ = check "two theorems"
-  (error_of (on_const \<^const_name>\<open>R\<close> [cand "both" goal]) =
-    "Sledgehammer fact trigger \"toy\": the candidate both evaluates to 2 theorems, but exactly one is expected.")
-
-(*a name is one fact reference, as the provers read it*)
-val _ = check "two references"
-  (String.isPrefix
-    "Sledgehammer fact trigger \"toy\": the candidate PQ QR cannot be evaluated:\n"
-    (error_of (on_const \<^const_name>\<open>R\<close> [cand "PQ QR" goal])))
-
-val _ = check "two references that give one theorem"
-  (String.isPrefix
-    "Sledgehammer fact trigger \"toy\": the candidate PQ nothing cannot be evaluated:\n"
-    (error_of (on_const \<^const_name>\<open>R\<close> [cand "PQ nothing" goal])))
-
-val _ = check "no theorem"
-  (error_of (on_const \<^const_name>\<open>R\<close> [cand "nothing" goal]) =
-    "Sledgehammer fact trigger \"toy\": the candidate nothing evaluates to 0 theorems, but exactly one is expected.")
+(*so does one raised while the name of an accepted candidate is printed: MePo prints the names of
+  the facts that it returns*)
+val _ = check "exception of the name"
+  (error_of (on_const \<^const_name>\<open>R\<close>
+    [{name = fn () => error "The name is printed", thm = Lazy.value @{thm QR[OF PQ[OF P7]]},
+      prop = goal, stature = stature}]) = "The name is printed")
 
 (*an exception of the trigger itself passes through*)
 val _ = check "exception of the trigger"

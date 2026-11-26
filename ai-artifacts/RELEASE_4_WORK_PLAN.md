@@ -40,7 +40,7 @@
 | S1 | tactic prover 永远作用在第 1 个子目标，不管被要求证第几个；结果是错的证明被报告成功 | `HOL/Tools/Sledgehammer/sledgehammer_prover_tactic.ML` | 两种做法在草稿里都试，交评审选：先 `Proof.prefer subgoal` 并在文本前加 `prefer n`；或子目标不是第 1 个时放弃 |
 | S2 | 外部 prover 找到的证明，只要一条事实名字读不回来就整个丢失 | `HOL/Tools/Sledgehammer/sledgehammer_instantiations.ML`（**新增被补丁的文件**） | `instantiate_facts` 在任何名字求值失败时返回 `NONE`，退回已有的失败消息 |
 | S3 | `meth_of` 缺 `fast` 和别的包注册的方法，一律当成 `metis`；开着 `instantiate` 时印出的不是实际成功的方法 | `sledgehammer_prover_tactic.ML` | `meth_of` 返回 option；没有对应时保留 Try0 自己的文本 |
-| S4 | MePo 接受「几个引用连写」的候选名字（如 `PQ nothing`），tactic prover 读不了 | `HOL/Tools/Sledgehammer/sledgehammer_mepo.ML` 的 `accept_item` | 用 `Attrib.eval_thms ctxt [xref_of_name ctxt name]` 求值；报错文案不变（文案是作者逐字批准的，见主计划 4.4） |
+| S4 | MePo 接受「几个引用连写」的候选名字（如 `PQ nothing`），tactic prover 读不了 | `HOL/Tools/Sledgehammer/sledgehammer_mepo.ML` 的 `accept_item` | 用 `Attrib.eval_thms ctxt [xref_of_name ctxt name]` 求值；报错文案不变（文案是作者逐字批准的，见主计划 4.4）。【2026-11-25：随候选的接口改成 lazy 不再有，被接受时不求值、两句报错删掉，见第 11 节】 |
 | E + S6 | README 不准确、缺失 | `README.md` | 重写相应段落；**文案要作者批**。要点见 `RELEASE_4_PLAN.md` 3.2 的 S6 和扫描报告第 6 条 |
 | S7 | 测试的空白 | `tests/` | 自决。要补的见扫描报告第 7 条。**测试会话里不能有会载入 MaSh 状态的测试**（会让之后的测试改走合并路径） |
 | S8 | 小的健壮性问题 | 各自的文件 | 自决 |
@@ -632,3 +632,66 @@ feature repository → 发布检查清单（SKILL isabelle-patch-feature 3.4）�
   已推送到 origin。
 - 10.3 第 2、4 步，作者 2026-11-18 批准：三份新计划文档都加入 feature repository 的提交；MLML 的
   submodule 指针提交并推送。feature repository 的这次提交包括本文件。
+- 10.3 第 3、4 步完成（2026-11-18）：feature repository `4838362`、MLML `3b027117`，都已推送到 origin。
+- 10.3 第 5 步：方案写在 auto_sledgehammer 仓库的 `ai-artifacts/LEADING_SUBGOAL_FIX_PLAN.md`（rev 1，未
+  提交）；探针在 MLML 的 `ai-artifacts/sh_leading_subgoal_probe/`（评审 agent 的探针在其 `review/` 下）。
+  第一轮评审（Workflow `wf_1ef722eb-6df`）：修改后接受、改完要复评；作者定了 hasty 的签名注释、重放
+  加好 `[1]` 的文本、`named_facts_of`、`looping_simp.ML` 一起改，并授权测试和文档的事我自决。rev 2 复评
+  （`wf_56693458-8d8`）：修改后接受、不需要再评；保留的三条测试意见并入 rev 3。
+- 2026-11-18 17:57 +08：auto_sledgehammer 的源码已按 rev 3 改完（未提交），两棵树上测试通过（原有的
+  `Test_Ground_Eval` 失败与本修复无关），七个变异体都被抓到，原 bug 的复现不再出现；记录在该方案第 8 节。
+  之后代码评审（`wf_44862436-640`）判「修改后接受，不需要再评」，唯一一条测试意见已改。作者准许后提交
+  并推送：auto_sledgehammer `006e5a8`（修复、测试、方案文件）、`83c6707`（`Test_Ground_Eval` 的目标改成
+  `fact (6::nat) = (720::nat)`）；MLML `8b42a0e1`、`a86e3c75`（指针）。两棵树上的 `Auto_Sledgehammer` heap
+  已按作者命令重建（19:15）；不发 conda。auto_sledgehammer 这件事已结束。
+- 仍待作者下令：第 4 版的发布（10.3 第 6 步）；本文件这几条进展记录尚未提交。
+
+## 11. 2026-11-25：第 4 版多带一件——候选的接口改成 lazy（会话 concept B 写下）
+
+写入的许可：作者 2026-11-25 11:22 UTC 在 concept B 的会话里「请先写进计划并维护」。本节与前文冲突时以本节为准。
+
+- **作者定的**（原话在 MLML 仓库 `ai-artifacts/concept_unary_partition_B_owner_messages_2026-11-19_after_fork.md`）：
+  - 2026-11-24 17:12 UTC：「我们要把 trigger 的接口改成 lazy 的」；17:14 UTC：「赞同做法二」。
+  - 2026-11-25 11:13 UTC：「可以从 trigger 里删掉」（4.4 的两句报错）。
+  - 2026-11-25 11:20 UTC：「由你来动手，并进第 4 版」（「你」指会话 concept B）。
+  - 2026-11-26 15:09 UTC，对"第 4 版什么时候发布"：「trigger 第 4 版最后统一跟整个系统一起发布」。
+    所以第 4 版不单独发，等 concept 整个系统做完时一起发；10.3 第 6 步"仍待作者下令"照此读。
+    【concept B 的说明】发布之前新接口怎样进到建在本 feature 上面的各棵树（concept 的树隔着
+    default_fact_qualifiers、global_form、generic_mksimps），还没有定，已向作者提出。
+  - 2026-11-26 15:41 UTC，对上面这个问题：「发布我说的是到 conda 的发布，但 trigger 那边现在就可以打 commit 然后合并进来」。
+    【concept B 的读法，已向作者说明】现在就把这处改动提交到 private tree 的分支并推送，然后照 SKILL 3.3 沿
+    default_fact_qualifiers、global_form、generic_mksimps、concept 逐棵合并本分支上还没发布的提交；"发布"指最后发到 conda。
+    `make-patches` 打第 4 版标签这一步他没有说，concept B 不做，等他下令。
+- **状态（2026-11-26 15:47 UTC）**：变异检查做了，五个变异都被测试抓到，不带变异的对照通过；
+  随后提交并推送：private tree `41d697b`（只有 `sledgehammer_mepo.ML`；没有标签，没有 `make-patches`）。
+  - 五个变异（都只改 `sledgehammer_mepo.ML`，每个在 private tree 上重建 HOL 与测试 session）：
+    候选一生成就算定理（测试报 `The theorem is forced`）；候选一生成就印名字（`The name is printed`）；
+    被接受的候选标成 `From_Pool`（`later round` 一例失败）；交出的不是触发器给的定理（`later round` 一例失败）；
+    算 `thm` 时的 `ERROR` 被吞掉（`exception of the theorem` 一例失败）。
+  - 第一次跑的那个变异作废：构建跑着时 concept B 改了测试 theory，测试 session 报 `Incoherent digest`，没有跑；重跑了。
+  - 测试加了一例 `exception of the name`（印被接受候选的名字时抛的异常原样传出）；主计划 3.1 那一块记了名字何时印。
+  - README 一句改准：MePo 只对它接受的候选算 `thm`、印 `name`（原来写"`name` 用到时才印"，被接受的其实在 MePo 返回前就印）。
+  - 这处改动还没有过代码评审（concept B 打算在提交之后做，改动作为后续提交）。
+- **做什么**：主计划 `SLEDGEHAMMER_FACT_TRIGGER_PLAN.md` 3.1 末尾"候选的接口改成 lazy"一块：
+  `candidate` 变成 `{name: unit -> string, thm: thm lazy, prop: term, stature: stature}`，被接受时取 `thm`、不再对文字求值，两句报错删掉。
+  随之没有了的：第 2 节的 S4（`accept_item` 用 `Attrib.eval_thms` 求值，已在私有树 `0f47be1` 里）与它的测试两例（`PQ QR`、`PQ nothing`）；这件要向作者说明。
+- **所以第 4 版现在不能照 10.3 第 6 步直接发**：要先把这件做进 private tree（现在 HEAD `0f47be1`，已推送）、过测试与评审，再发。
+  这是不兼容的接口改动；用到 `add_trigger` 的除了本 feature 自己的测试与 README，
+  还有 concept 的 `contrib/concept/concept_type.ML`（`concept_selector` 的触发器，concept A1 的代码）
+  与 auto_sledgehammer 的测试 `Test/Test_Fast_Mepo_Trigger.thy`，要一起改（主计划 3.1 末尾那一块）。
+- **状态（2026-11-26 04:34 UTC）**：在 private tree 上构建过了，测试通过；**没有提交**。
+  - 作者 2026-11-26 04:24:53 UTC 对"trigger 那棵私有树上可否构建"：「2. 可以，批准你任意的 isabelle build」。
+  - 04:27 至 04:34 UTC 构建：`bin/isabelle build -b -o threads=2 -d <feature>/tests HOL Sledgehammer_Fact_Trigger_Test`，
+    HOL 重建 6 分 53 秒，测试 session 27 秒，exit 0（日志在 MLML 的 `ai-artifacts/concept_B_prototype/trigger/build_trigger1.log`，不提交）。
+  - `tests/ROOT` 的说明里"their evaluation and the two error messages"改成了"their theorems and names"。
+  - 没有做变异检查（每个变异都要重建 HOL）。还没有做的照下面"还没有做"一条。
+- **此前的状态（2026-11-25 12:04 UTC）**：代码与测试已改，**没有构建过、没有跑过、没有提交**（private tree 上的构建没有点名的授权，等作者）。
+  - private tree 的 `src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML`：`candidate` 换成新的 record；`accept_item` 只取 `thm`、不再要 `ctxt`；
+    `Generated` 里触发器的名字没有读它的了，去掉；`name_of_item` 调 `name ()`。别的文件没有动。
+  - `tests/Sledgehammer_Fact_Trigger_Test.thy`：`cand` 造的候选自己用 `thms_of_name` lazy 地求值；"落选的候选"一例改成名字与定理都不被碰；
+    加一例"文字不被求值，用的是触发器交的定理"；"Errors"一节里断言那两句报错的六例换成一例"算 `thm` 时的异常原样传播"；`lemmas both` 没有用了，删掉。
+  - `tests/Readme_Example.thy` 与 `README.md`：类型、例子与三段说明改成新的接口。
+  - 还没有做：主计划 3.1 末尾"要跟着改的"清单里各节的逐句修改；`contrib/concept/concept_type.ML`（concept A1，已告知）与 auto_sledgehammer 的测试。
+- **起初的状态（11:25 UTC）**：只写了计划，代码没有动。concept B 动手前要做的：读 SKILL `isabelle-patch-feature` 与本文件第 8 至 10 节；
+  private tree 上的构建先向作者确认授权（他 2026-11-24 03:32 UTC 的「授权你任意的构建」，concept B 读作只管 concept 的树）；本仓库里两份计划文件有此前未提交的改动，一并留着。
+- 照作者对这一版的要求（第 1 节）：行为变化不擅自做、发布前把已知的问题逐条告诉他、不零碎出版本。

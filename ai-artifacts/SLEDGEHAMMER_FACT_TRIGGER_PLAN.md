@@ -145,6 +145,63 @@ val add_trigger : string -> trigger -> Context.generic -> Context.generic
     的 `run_mepo_and_render` 用 `Logic.strip_assums_hyp` / `strip_assums_concl`。
   - 任何调用者下，绑定者之下的子项本来就含 `Bound`。
 
+**【已定，2026-11-25：候选的接口改成 lazy，触发器直接交定理（并进第 4 版）。
+已在 private tree 里实现、构建并测试通过（2026-11-26 04:34 UTC）；变异检查之后提交为 private tree
+`41d697b`（2026-11-26 15:54 UTC，已推送，没有标签、没有发布）】**
+
+写入的许可：作者 2026-11-25 11:22 UTC（在 concept B 的会话里）「请先写进计划并维护」。原话都在
+MLML 仓库 `ai-artifacts/concept_unary_partition_B_owner_messages_2026-11-19_after_fork.md`。
+
+- 作者 2026-11-24 17:12 UTC：「我们要把 trigger 的接口改成 lazy 的」；17:14 UTC 对下面这种做法：「赞同做法二」。
+- 新的类型：
+
+  ```ML
+  type candidate =
+    {name    : unit -> string,   (* 写进证明的 Isar 事实表达式，用到时才印 *)
+     thm     : thm lazy,         (* 这条事实本身，被接受时才算 *)
+     prop    : term,             (* 打分和去重用的命题，仍然即时给 *)
+     stature : stature}
+  ```
+
+- 行为的改变（4.3、4.4、第 5 节、6.1 节、第 7 节、第 10 节里与此不符的句子以这里为准，还没有逐句改）：
+  - 候选被接受时取 `thm`，**不再**用 `thms_of_name` 对 `name` 求值；落选的候选既不印文字，也不算定理。
+  - `name` 只在 Sledgehammer 要这条事实的名字时才印。
+  - 【concept B 的说明，作者还没有单独听过】所以 4.3 说的"交给 prover 和用于重放的是求值得到的那条真定理"这个保证没有了：
+    文字对不对由触发器自己保证；文字写错时 prover 用的是对的定理，重放却失败或证的是别的。作者知情后记进第 8 节作【后果】。
+    （起因的那个触发器是 concept 的：它的文字是 `[[concept_fact "P"]]`。
+    2026-11-25 写的是"造候选时把命题印出来再读回去核过"；
+    作者 2026-11-25 12:21 UTC：「如果真的“命题印出来读不读得回”了，那就直接输出 Thm.dummy 让证明失败好了」。
+    所以候选照常交，名字用到时才印（concept B 的推论）；印不出读得回的文字时名字是 dummy theorem，写成 `[[]]`（他 12:57 UTC 批的）。
+    全文在 MLML 的 `ai-artifacts/CONCEPT_B_FACT_PLAN.md` 7.1 `name_of` 一条。）
+  - 4.4 的两句报错删掉：作者 2026-11-25 11:13 UTC：「可以从 trigger 里删掉」。
+    即 `the candidate <N> cannot be evaluated` 与 `evaluates to <k> theorems, but exactly one is expected`。
+    真去算 `thm` 时抛的异常（发生在 MePo 接受候选的那一刻）照 4.4 已定的"触发器函数自己抛异常：不捕获，原样传播"
+    （这是 concept B 向作者建议时说的做法，作者答的是删掉那两句）。
+    印 `name` 时抛的异常发生在什么地方、会不会被 prover 外面那个捕获一切非中断异常的处理器（6.4 节【后果】）吞掉，还没有核；改代码时一并查。
+    【2026-11-26：代码已改（2026-11-26 04:27 至 04:34 UTC 构建并测试），这一件仍没有核。】
+    【2026-11-26 14:48 UTC 核了，读源码，没有另跑探针】`mepo_suggested_facts_with_origin` 的最后一步是
+    `map (apfst fact_of_lazy_fact)`（private tree 的 `sledgehammer_mepo.ML` 675 行），
+    `fact_of_lazy_fact` 对每条返回的事实调 `name ()`（`sledgehammer_fact.ML` 445 行）。发行版对 pool 里的事实本来就这样做。
+    所以：
+    - 被接受的候选，名字在 MePo 返回之前就印，不论后来的证明用不用它；省掉的只是落选候选的名字与定理。
+      上面"`name` 只在 Sledgehammer 要这条事实的名字时才印"一句照此读。
+    - 印名字时抛的异常与触发器自己抛的、算 `thm` 时抛的出自同一个函数，走同一条路：能否到达用户照第 7 节，没有新的情形。
+    - 测试 `tests/Sledgehammer_Fact_Trigger_Test.thy` "Errors"一节加了一例 `exception of the name`（同日加，随变异检查的构建一起跑）。
+  - `prop` 的用途不变（打分与去重的提示）。现在它可以与 `thm` 的命题直接比，但仍**不检查**（4.3 的决定不变）。
+- 为什么改：作者 2026-11-24 17:11 UTC 问「这个印名字是何时发生？在给 the trigger 的时候就必须要打印了吗？能之后需要的时候再 lazy 打印吗？」，17:12 UTC 定了改成 lazy。
+  【concept B 的说明】另一个好处：被接受的候选不再要把文字解析、求值一遍；
+  concept 的文字改成印命题之后，求值一次要 0.3 至 2.7 毫秒（2026-11-18 的原型上量的）。
+- 由谁做、算哪一版：作者 2026-11-25 11:20 UTC：「由你来动手，并进第 4 版」（「你」指会话 concept B）。
+- 不兼容的改动：`candidate` 的类型变了。MLML 里调 `Sledgehammer_MePo.add_trigger` 的，除了本 feature 自己的测试与 README，
+  还有 concept 的 `contrib/concept/concept_type.ML`（`concept_selector` 的触发器，concept A1 的代码）
+  与 auto_sledgehammer 的测试 `Test/Test_Fast_Mepo_Trigger.thy`；
+  它们要随第 4 版一起改成新的类型，动之前先告诉 concept A1 与 auto_sledgehammer 的维护者
+  （2026-11-25 校对的 agent 用 `/usr/bin/grep` 查出，concept B 核过；concept B 当天早先写的"没有别的代码调它"不对）。
+- 要跟着改的：3.1 的类型与注释；4.3 里候选的定理在被接受的那一刻求值的一条及其后两条；
+  4.4 的两句报错、「求值失败」的范围一段与末尾「恰好一条」一段；
+  第 5 节里讲求值的句子；6.1 节"尚未求值的触发器候选"一条；第 7 节表里讲"候选求值失败"的各行；
+  第 10 节第 3、5、6、11 项与测试里断言那两句报错的各处；第 4 版计划第 2 节的 S4；README。
+
 ### 3.2 带来源的结果与合并（供发行版自身和外部的事实筛选器共用）
 
 ```ML
@@ -218,6 +275,8 @@ val insert_generated_facts : (fact * origin) list -> fact list -> fact list
 
 - 【已定】触发器只输出候选，由 MePo 打分，与普通候选公平竞争。
 - 【已定】候选在下一次打分时进入待评列表，分数未计算。
+【2026-11-25：候选的接口改成 lazy（3.1 末尾那一块），本小节讲的"对 `name` 求值"与"恰好一条"不再有：
+被接受时取候选自己带的 `thm`（`Lazy.force`）。代码已改，下面的文字还没有逐句改。】
 - 【已定】候选的定理在**被接受的那一刻**用 `Sledgehammer_Util.thms_of_name`（发行版已有）
   对 `name` 求值得到；落选的候选从不求值。
 - 【已定】求值结果必须恰好一条定理。
@@ -241,6 +300,10 @@ val insert_generated_facts : (fact * origin) list -> fact list -> fact list
   仍得满分。
 
 ### 4.4 失败
+
+【2026-11-25：下面第二、三种情况随候选的接口改成 lazy（3.1 末尾那一块）不再出现，两句报错删掉；
+已在 private tree 里实现、构建并测试通过（2026-11-26 04:34 UTC），未提交。
+下面"「恰好一条」保留"一句随之没有对象：候选直接带一条定理。】
 
 【已定】下面三种情况都是触发器的 bug，直接报错，不丢弃、不降级为 trace。
 
@@ -377,6 +440,8 @@ tactic prover 失败有两个独立的原因，【已定】两处都按正规方
 
 ### 6.1 `sledgehammer_mepo.ML`
 
+【2026-11-25：候选的接口改成 lazy（3.1 末尾那一块）。本小节里"尚未求值的触发器候选（带触发器名供报错使用）""被接受时把后者求值"不再有：
+候选项不带触发器名，被接受时取候选的 `thm`、`name` 原样传下去。代码已改，下面的文字还没有逐句改。】
 - 导出 `ptype`（抽象）与 `typargs_of_ptype`；新增 3.1 的类型与 `add_trigger`；新增 3.2 的
   `origin` 与 `mepo_suggested_facts_with_origin`。
 - 迭代里的候选项改为两种情形的数据类型：候选池里的定理（现有的 `lazy_fact`），或尚未求值的
@@ -468,7 +533,7 @@ MLML 仓库的 `ai-artifacts/sh_trigger_error_probe/` 下的 `g_ml`、`g_try`、
 | AutoCorrode 的 `iq/Isar_Explore.thy` | 把 `mepo_suggested_facts` 包在 `handle ERROR _ => []` 里，4.4 的报错在那里被丢掉 | 【读码】 |
 | Isa-REPL 的前提选择（`library/premise_selection.ML`） | 三处调用 `relevant_facts`，该文件里没有异常处理器；异常传到 REPL 的请求循环，那里怎样回报没有跑 | 【读码】 |
 | `auto_sledgehammer` 的 `raw_sledgehammer` 方法 | 候选求值失败：文案原文显示在 `apply` 命令处（6.4 的改动 `2ccead2` 第一次用真实的触发器验证；此前只用不存在的 prover 替代验证过） | 【实测】 |
-| `auto_sledgehammer` 的 `fast_mepo` 方法 | 有局部事实时：文案原文显示在 `apply` 命令处。**没有局部事实时 MePo 根本不被调用**（`fast_mepo_tac` 只把局部事实交给 MePo，候选池为空就跳过），触发器不运行，方法以普通的 `Failed to apply proof method` 失败 | 【实测】，两种情况各跑了一次 |
+| `auto_sledgehammer` 的 `fast_mepo` 方法 | 有局部事实时：文案原文显示在 `apply` 命令处。**没有局部事实时 MePo 根本不被调用**（`fast_mepo_tac` 只把局部事实交给 MePo，候选池为空就跳过），触发器不运行，方法以普通的 `Failed to apply proof method` 失败。【2026-11-23 注，concept B 会话照作者的指派改：加粗的这半句已过时。auto_sledgehammer 的提交 `006e5a8`（"MePo on an empty pool"）起，`run_mepo_and_render` 不论候选池空不空都调用 MePo，所以没有局部事实时触发器也运行；这是读 `library/sledgehammer_solver.ML` 得出的，那时方法怎样结束没有重跑】 | 【实测】，两种情况各跑了一次（是 `006e5a8` 之前跑的） |
 | `by auto_sledgehammer`，触发器给出可用的事实 | 证出只能靠生成事实证明的目标。它存下的证明是 `(Auto_Sledgehammer.pre_simproc_on_concl, (-, (insert QR [ "OF" PQ [ OF P7 ] ] or_not_num_neg.simps ( 3 ))[1], simp))[1]`：生成事实的名字带着嵌套属性进了它的证明文本，并通过了它自己的重放 | 【实测】 |
 
 `auto_sledgehammer` 这三行的探针是 `g_auto1`、`g_auto2`、`g_auto3`；为跑它们在 private tree 里
@@ -545,6 +610,8 @@ light_locale 的会话（`light locale old plan`），3.7 第 1 步的检查已�
 
 ## 10. 测试
 
+【2026-11-25：候选的接口改成 lazy（3.1 末尾那一块）。下面讲求值失败、落选的候选不被求值、那两句报错的各条不再有对象；
+测试文件已照新接口改（第 4 版计划第 11 节），这里的文字还没有逐句改。第 11 节里"检查求值结果的命题与 `prop` 是否一致"一条同样没有对象。】
 【自决】放在 feature repository 的测试会话里，用一个玩具触发器（`PQ`、`QR`、`P7` 一类）。
 
 1. 触发器生成的候选出现在 MePo 的结果里，名字是给定的表达式，来源是 `From_Trigger`。
@@ -653,6 +720,15 @@ MePo 的核心部分被判定忠实于 3–6 节，两段报错文案逐字一�
   保证的性质；后者把调度塞进合并函数。
 - 把 `auto_sledgehammer` 的 `run_mepo_and_render` 改用 `strip_subgoal`：会改变 `fast_mepo` 的
   选择和缓存，不属于本计划。
+  【2026-11-23 注，concept B 会话照作者的指派加（作者 2026-11-23 07:40 UTC：「SLEDGEHAMMER_FACT_TRIGGER_PLAN.md 里过时的句子你来改」）】
+  这项改动后来在 concept 的设计里定了要做，条件满足之后做：决议 `ai-artifacts/concept_B_open_questions_2026-11-22/Q08_resolution_v5.md`
+  （MLML 仓库里，不提交；concept B 照作者 2026-11-22 07:19 UTC 的授权定，经评审接受），状态记在 `ai-artifacts/CONCEPT_B_FACT_PLAN.md` 11.2。
+  - 条件是那份决议第 2 项说的两样：第 3 项的中立性探针，与第 4 项 auto_sledgehammer 自己的测试。探针查出差别就不做。
+  - 上面"会改变 `fast_mepo` 的选择和缓存"在那份决议的做法下不成立：没有登记触发器时，MePo 的选择在任何目标上都不变，
+    因为换上的参数名既避开上下文里的自由名字，也避开候选池里各条事实的自由名字（决议第 1 项）；存下的证明照样能重放。
+    这一点目前是读代码得出的，探针跑过之后才算实测。
+  - 改动落地之后，3.1 里拿 `auto_sledgehammer` 的 `run_mepo_and_render` 举的那个例子要换成一般的说法
+    （"直接传 `Logic.strip_assums_hyp` / `strip_assums_concl` 的结果的调用者"）。现在它还是对的，没有改。
 - 在 MePo 里把触发器的异常包成 `ERROR`：与「原样传播」相抵。
 - 给 `pconst_freq` 加缺省值和下限 1：改动原版函数，且不计候选自己的出现次数。
 - 把带属性的事实一律放进 Try0 的 using 类。

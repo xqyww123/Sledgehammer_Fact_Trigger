@@ -3,8 +3,8 @@
 
 session Sledgehammer_Fact_Trigger_Test = HOL +
   description "
-    Checks of Sledgehammer fact triggers: generated candidates in MePo's result, their evaluation
-    and the two error messages, merging with other fact filters, and proofs that name a fact by an
+    Checks of Sledgehammer fact triggers: generated candidates in MePo's result, their theorems
+    and names, merging with other fact filters, and proofs that name a fact by an
     Isar fact expression with nested attributes; and checks of the tactic provers of Sledgehammer.
     Any failing check fails the build.
   "

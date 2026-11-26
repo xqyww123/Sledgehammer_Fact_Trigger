@@ -32,8 +32,9 @@ type trigger_input =
    accepted   : Sledgehammer_Fact.lazy_fact list}   (* the facts accepted, most recent first *)
 
 type candidate =
-  {name    : string,     (* an Isar fact expression *)
-   prop    : term,       (* its proposition, used to score the candidate *)
+  {name    : unit -> string,   (* the Isar fact expression written into a proof *)
+   thm     : thm lazy,         (* the fact itself *)
+   prop    : term,             (* its proposition, used to score the candidate *)
    stature : stature}
 ```
 
@@ -56,15 +57,16 @@ round; candidates from the call after round k take part from round k + 1 on, so 
 the facts accepted up to round k, which can include facts of the pool that contain the same
 constants. A trigger that fires on constants of the goal thus gives its candidates the best chance.
 The `stature` of a candidate counts in its score as for any fact: `Simp`, `Intro` and `Elim` get a
-bonus. MePo evaluates `name` only when it accepts the candidate. `name` must be one fact reference
-as Isar reads it (for example a name with an optional selection and optional attributes), not
-several references in a row, and it must denote exactly one theorem.
-`prop` is not compared with that theorem. A trigger should return at once when `new_consts` holds
-nothing it cares about.
+bonus. MePo forces `thm` and calls `name` only for a candidate that it accepts, so a candidate
+that is rejected costs neither. `name` must give one
+fact reference as Isar reads it (for example a name with an optional selection and optional
+attributes), not several references in a row, and that reference must denote `thm` where the proof
+is replayed: MePo does not evaluate the text, so this is up to the trigger. `prop` is not compared
+with `thm`. A trigger should return at once when `new_consts` holds nothing it cares about.
 
 A trigger must be a pure function: MePo runs in parallel with MaSh. An exception raised by a
-trigger, or a candidate that does not evaluate to exactly one theorem, stops Sledgehammer with an
-error. Where Isabelle itself goes on after an error of Sledgehammer, it also goes on after this
+trigger, or by forcing the `thm` of a candidate that MePo accepts, stops Sledgehammer with that
+exception. Where Isabelle itself goes on after an error of Sledgehammer, it also goes on after this
 one: the `try` command and automatic Sledgehammer show nothing, and Mirabelle writes the error to
 its log.
 
@@ -78,7 +80,7 @@ setup \<open>
   Context.theory_map (Sledgehammer_MePo.add_trigger "example"
     (fn {new_consts, ...} =>
       if member (op =) new_consts \<^const_name>\<open>Q\<close> then
-        [{name = "PQ[OF P7]", prop = \<^prop>\<open>Q 7\<close>,
+        [{name = K "PQ[OF P7]", thm = Lazy.value @{thm PQ[OF P7]}, prop = \<^prop>\<open>Q 7\<close>,
           stature = (ATP_Problem_Generate.Global, ATP_Problem_Generate.General)}]
       else []))
 \<close>
@@ -139,8 +141,9 @@ Known limits:
 New in version 2026.0.4: `auto`, `fastforce` and `force` with global facts; the subgoal of a tactic
 prover; the command that a tactic prover shows; the theorems of a fact given as `sledgehammer (foo)`
 are evaluated one by one; blanks in the names of unnamed facts and in instantiated induction rules;
-proofs of external provers are no longer lost; `of` instantiations of anonymous facts; the name of
-a trigger's candidate must be one fact reference.
+proofs of external provers are no longer lost; `of` instantiations of anonymous facts; a
+trigger's candidate carries its theorem (`thm`) and makes its name on demand (`name`), and MePo no
+longer evaluates the text of the name (an incompatible change of the type `candidate`).
 
 ## Sources
 

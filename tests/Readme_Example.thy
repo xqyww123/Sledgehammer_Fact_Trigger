@@ -14,7 +14,7 @@ setup \<open>
   Context.theory_map (Sledgehammer_MePo.add_trigger "example"
     (fn {new_consts, ...} =>
       if member (op =) new_consts \<^const_name>\<open>Q\<close> then
-        [{name = "PQ[OF P7]", prop = \<^prop>\<open>Q 7\<close>,
+        [{name = K "PQ[OF P7]", thm = Lazy.value @{thm PQ[OF P7]}, prop = \<^prop>\<open>Q 7\<close>,
           stature = (ATP_Problem_Generate.Global, ATP_Problem_Generate.General)}]
       else []))
 \<close>
