@@ -69,26 +69,6 @@ val _ = check "later round"
 val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close> [cand "QR[OF PQ[OF P7]]" goal]) \<^context>) 64 goal
 val _ = check "before round 0" (map #2 (generated res) = ["QR[OF PQ[OF P7]]"])
 
-(*of a candidate that MePo rejects, neither the theorem is forced nor the name printed*)
-val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
-  [{name = fn () => error "The name is printed", thm = Lazy.lazy (fn () => error "The theorem is forced"),
-    prop = unrelated, stature = stature}]) \<^context>) 64 goal
-val _ = check "rejected candidate" (null (generated res))
-
-(*so does a candidate that the quota cuts: with room for one fact, of two candidates of the
-  highest score at most one has its theorem forced and its name printed*)
-val forced = Synchronized.var "forced" (0: int)
-val named = Synchronized.var "named" (0: int)
-fun counted name th prop : candidate =
-  {name = fn () => (Synchronized.change named (fn n => n + 1); name),
-   thm = Lazy.lazy (fn () => (Synchronized.change forced (fn n => n + 1); th)),
-   prop = prop, stature = stature}
-val _ = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
-  [counted "QR[OF PQ[OF P7]]" @{thm QR[OF PQ[OF P7]]} goal,
-   counted "TrueI" @{thm TrueI} \<^prop>\<open>R 7 \<Longrightarrow> R 7\<close>]) \<^context>) 1 goal
-val _ = check "candidate cut by the quota"
-  (Synchronized.value forced <= 1 andalso Synchronized.value named <= 1)
-
 (*the theorem of an accepted candidate is the one that the trigger hands over, whatever its name
   says: the text of the name is not evaluated, be it no fact or another fact*)
 val _ = ["no_such_fact", "QR[OF PQ[OF P7]]"] |> List.app (fn name =>
@@ -102,6 +82,26 @@ val _ = ["no_such_fact", "QR[OF PQ[OF P7]]"] |> List.app (fn name =>
         [(_, name', t)] => name' = name andalso t aconv \<^prop>\<open>Q 7\<close>
       | _ => false)
   end)
+
+(*of a candidate that MePo rejects, neither the theorem is forced nor the name printed*)
+val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+  [{name = fn () => error "The name is printed", thm = Lazy.lazy (fn () => error "The theorem is forced"),
+    prop = unrelated, stature = stature}]) \<^context>) 64 goal
+val _ = check "rejected candidate" (null (generated res))
+
+(*so does a candidate that the quota cuts: with room for one fact, of two candidates of the
+  highest score exactly one has its theorem forced, and at most one its name printed*)
+val forced = Synchronized.var "forced" (0: int)
+val named = Synchronized.var "named" (0: int)
+fun counted name th prop : candidate =
+  {name = fn () => (Synchronized.change named (fn n => n + 1); name),
+   thm = Lazy.lazy (fn () => (Synchronized.change forced (fn n => n + 1); th)),
+   prop = prop, stature = stature}
+val _ = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+  [counted "QR[OF PQ[OF P7]]" @{thm QR[OF PQ[OF P7]]} goal,
+   counted "TrueI" @{thm TrueI} \<^prop>\<open>R 7 \<Longrightarrow> R 7\<close>]) \<^context>) 1 goal
+val _ = check "candidate cut by the quota"
+  (Synchronized.value forced = 1 andalso Synchronized.value named <= 1)
 
 (*the same proposition from every round and from two expressions: one fact*)
 val res = mepo (with_trigger (fn _ =>

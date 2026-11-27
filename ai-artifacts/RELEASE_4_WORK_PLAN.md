@@ -692,15 +692,26 @@ feature repository → 发布检查清单（SKILL isabelle-patch-feature 3.4）�
   - 照评审改了的（private tree 的那一处 2026-11-27 提交并推送为 `7a28f60`；其余随 feature repository 同日的提交）：
     private tree 里 `sledgehammer_mepo.ML` 一处注释（"made when MePo returns the candidate"）；
     README 三处（名字何时印；印名字时的异常；版本说明一句）；
-    测试加三样（被名额截掉的候选；"交出的是触发器给的定理"改成两次运行；不是 `ERROR` 的异常）；
+    测试加三样（排在名额之外的候选；"交出的是触发器给的定理"改成两次运行；不是 `ERROR` 的异常）；
     变异加四个（共九个）。带新测试的对照构建通过（2026-11-27）。
   - 九个变异对着新测试重跑了（2026-11-27 03:11 至 04:40 UTC），全部被测试 session 抓到，每次替换恰好发生一次；
     之后好源码重建，测试通过（04:47 UTC）。原先五个失败的检查与 2026-11-26 相同。新加的四个：
-    - 先照名字的文字去取定理、取不到才用 `thm`：`candidate cut by the quota` 一例失败；
+    - 先照名字的文字去取定理、取不到才用 `thm`：这一轮里失败的是 `candidate cut by the quota` 一例，原因与名额无关——
+      变异在接受候选时调了一次 `name ()`，MePo 返回时又调一次，名字的计数到了 2；
+      为它写的"交出的是触发器给的定理"那一例排在后面，没有跑到（短复审查出，见下一条）；
     - 交出的定理由 `prop` 另造、不是触发器给的那一条：`the theorem that the trigger hands over` 一例失败；
     - 算 `thm` 时不是 `ERROR` 的异常被包成 `ERROR`：测试 session 在 "Errors" 一节的 ML 块里以 `exception Option raised` 的 `ERROR` 失败
       （"不是 `ERROR` 的异常原样传出"那一例接的是原来的异常，包成的 `ERROR` 没有人接）；
     - 名额截掉候选之前就把每个候选的 `thm` 算出来：`candidate cut by the quota` 一例失败。
+  - 短复审（代码评审第 5 节末尾要的；一个只读的评审 agent，报告在 MLML 的
+    `ai-artifacts/concept_B_trigger_lazy_interface_second_look_2026-11-27.md`，不提交）：结论是改几处小的之后接受。照改的三处：
+    - "交出的是触发器给的定理"那一例挪到名额那一例之前；第 3 轮（2026-11-27 05:31 UTC 起）重跑上面第一个变异，
+      失败的是 `the theorem that the trigger hands over QR[OF PQ[OF P7]]`，正是为它写的那一例；
+    - "被名额截掉"在主计划里分开写：排在名额之外、被 `take_most_relevant` 截掉的候选没有被接受，定理不算、名字不印；
+      被接受之后在 `insert_into_facts` 里被挤掉的候选只算了定理、不印名字；
+    - 名额那一例的检查收紧成"定理恰好算一次、名字至多印一次"（原来两样都是"至多一次"，一个候选也不打分时也通过）。
+    改过的测试上，对照构建通过（05:32 UTC），那个变异之后好源码重建、测试通过（05:49 UTC）；别的八个变异没有重跑。
+    短复审还核过：`wrap_exception` 是"不是 `ERROR` 的异常原样传出"那一例真抓到的。
   - auto_sledgehammer 的 `Test/Test_Fast_Mepo_Trigger.thy` 已改成新接口；2026-11-27 04:57 UTC 在本 feature 的 private tree
     （`7a28f60`）上跑过，通过（`theorem g 2 = 3`，退出码 0；跑法照 auto_sledgehammer 的 `LEADING_SUBGOAL_FIX_PLAN.md` 4.1，
     先重建了那棵树的 `Performant_Isabelle_HOL`）；提交为 auto_sledgehammer `d840b9a`，已推送。
@@ -708,7 +719,8 @@ feature repository → 发布检查清单（SKILL isabelle-patch-feature 3.4）�
     共享树是官方原版，没有 fact trigger，这个测试不在它上面跑。
   - 第 4 节（"已知、目前不在范围内的"）：作者 2026-11-27 问了每条是谁定的、为什么不修，concept B 照两份计划的记录答了；
     他还没有逐条确认。打标签之前要再请他逐条确认。名字何时印、文字不核对两条他已接受，记在主计划第 8 节第 6、7 条。
-  - 接下来：评审要的短复审；然后等发 conda 时的命令。
+  - 接下来：等发 conda 时的命令（打标签；第 4 节请作者逐条确认）。README 改的三段 2026-11-27 交给作者看了
+    （经会话 concept B discussion 转）。
 - **做什么**：主计划 `SLEDGEHAMMER_FACT_TRIGGER_PLAN.md` 3.1 末尾"候选的接口改成 lazy"一块：
   `candidate` 变成 `{name: unit -> string, thm: thm lazy, prop: term, stature: stature}`，被接受时取 `thm`、不再对文字求值，两句报错删掉。
   随之没有了的：第 2 节的 S4（`accept_item` 用 `Attrib.eval_thms` 求值，已在私有树 `0f47be1` 里）与它的测试两例（`PQ QR`、`PQ nothing`）；这件要向作者说明。
