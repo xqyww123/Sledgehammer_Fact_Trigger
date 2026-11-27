@@ -701,12 +701,14 @@ feature repository → 发布检查清单（SKILL isabelle-patch-feature 3.4）�
     - 算 `thm` 时不是 `ERROR` 的异常被包成 `ERROR`：测试 session 在 "Errors" 一节的 ML 块里以 `exception Option raised` 的 `ERROR` 失败
       （"不是 `ERROR` 的异常原样传出"那一例接的是原来的异常，包成的 `ERROR` 没有人接）；
     - 名额截掉候选之前就把每个候选的 `thm` 算出来：`candidate cut by the quota` 一例失败。
-  - auto_sledgehammer 的 `Test/Test_Fast_Mepo_Trigger.thy` 已改成新接口，**还没有跑、没有提交**。
+  - auto_sledgehammer 的 `Test/Test_Fast_Mepo_Trigger.thy` 已改成新接口；2026-11-27 04:57 UTC 在本 feature 的 private tree
+    （`7a28f60`）上跑过，通过（`theorem g 2 = 3`，退出码 0；跑法照 auto_sledgehammer 的 `LEADING_SUBGOAL_FIX_PLAN.md` 4.1，
+    先重建了那棵树的 `Performant_Isabelle_HOL`）；提交为 auto_sledgehammer `d840b9a`，已推送。
     它只在带 fact trigger 的树上跑，那些树现在都是新接口，所以它在改之前编译不过。
     共享树是官方原版，没有 fact trigger，这个测试不在它上面跑。
   - 第 4 节（"已知、目前不在范围内的"）：作者 2026-11-27 问了每条是谁定的、为什么不修，concept B 照两份计划的记录答了；
     他还没有逐条确认。打标签之前要再请他逐条确认。名字何时印、文字不核对两条他已接受，记在主计划第 8 节第 6、7 条。
-  - 接下来：评审要的短复审；跑 auto_sledgehammer 的那个测试；然后等发 conda 时的命令。
+  - 接下来：评审要的短复审；然后等发 conda 时的命令。
 - **做什么**：主计划 `SLEDGEHAMMER_FACT_TRIGGER_PLAN.md` 3.1 末尾"候选的接口改成 lazy"一块：
   `candidate` 变成 `{name: unit -> string, thm: thm lazy, prop: term, stature: stature}`，被接受时取 `thm`、不再对文字求值，两句报错删掉。
   随之没有了的：第 2 节的 S4（`accept_item` 用 `Attrib.eval_thms` 求值，已在私有树 `0f47be1` 里）与它的测试两例（`PQ QR`、`PQ nothing`）；这件要向作者说明。
