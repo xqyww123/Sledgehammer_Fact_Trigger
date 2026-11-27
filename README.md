@@ -57,16 +57,17 @@ round; candidates from the call after round k take part from round k + 1 on, so 
 the facts accepted up to round k, which can include facts of the pool that contain the same
 constants. A trigger that fires on constants of the goal thus gives its candidates the best chance.
 The `stature` of a candidate counts in its score as for any fact: `Simp`, `Intro` and `Elim` get a
-bonus. MePo forces `thm` and calls `name` only for a candidate that it accepts, so a candidate
-that is rejected costs neither. `name` must give one
+bonus. MePo forces `thm` when it accepts a candidate, and calls `name` for each accepted candidate
+in its result as it returns, whether or not a proof later uses the fact; a candidate that is
+rejected costs neither. `name` must give one
 fact reference as Isar reads it (for example a name with an optional selection and optional
 attributes), not several references in a row, and that reference must denote `thm` where the proof
 is replayed: MePo does not evaluate the text, so this is up to the trigger. `prop` is not compared
 with `thm`. A trigger should return at once when `new_consts` holds nothing it cares about.
 
 A trigger must be a pure function: MePo runs in parallel with MaSh. An exception raised by a
-trigger, or by forcing the `thm` of a candidate that MePo accepts, stops Sledgehammer with that
-exception. Where Isabelle itself goes on after an error of Sledgehammer, it also goes on after this
+trigger, by forcing the `thm` of a candidate that MePo accepts, or by calling its `name`, stops
+Sledgehammer with that exception. Where Isabelle itself goes on after an error of Sledgehammer, it also goes on after this
 one: the `try` command and automatic Sledgehammer show nothing, and Mirabelle writes the error to
 its log.
 
@@ -142,8 +143,9 @@ New in version 2026.0.4: `auto`, `fastforce` and `force` with global facts; the 
 prover; the command that a tactic prover shows; the theorems of a fact given as `sledgehammer (foo)`
 are evaluated one by one; blanks in the names of unnamed facts and in instantiated induction rules;
 proofs of external provers are no longer lost; `of` instantiations of anonymous facts; a
-trigger's candidate carries its theorem (`thm`) and makes its name on demand (`name`), and MePo no
-longer evaluates the text of the name (an incompatible change of the type `candidate`).
+trigger's candidate carries its theorem (`thm`) and a function that makes its name (`name`); MePo
+uses them only for a candidate that it accepts, and no longer evaluates the text of the name (an
+incompatible change of the type `candidate`).
 
 ## Sources
 

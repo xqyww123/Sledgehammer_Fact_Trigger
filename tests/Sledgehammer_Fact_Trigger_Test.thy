@@ -75,13 +75,33 @@ val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
     prop = unrelated, stature = stature}]) \<^context>) 64 goal
 val _ = check "rejected candidate" (null (generated res))
 
-(*the theorem of an accepted candidate is the one that the trigger hands over: the text of its
-  name is not evaluated*)
-val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
-  [{name = K "no_such_fact", thm = Lazy.value @{thm QR[OF PQ[OF P7]]}, prop = goal,
-    stature = stature}]) \<^context>) 64 goal
-val _ = check "the theorem that the trigger hands over"
-  (case generated res of [(_, "no_such_fact", t)] => t aconv goal | _ => false)
+(*so does a candidate that the quota cuts: with room for one fact, of two candidates of the
+  highest score at most one has its theorem forced and its name printed*)
+val forced = Synchronized.var "forced" (0: int)
+val named = Synchronized.var "named" (0: int)
+fun counted name th prop : candidate =
+  {name = fn () => (Synchronized.change named (fn n => n + 1); name),
+   thm = Lazy.lazy (fn () => (Synchronized.change forced (fn n => n + 1); th)),
+   prop = prop, stature = stature}
+val _ = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+  [counted "QR[OF PQ[OF P7]]" @{thm QR[OF PQ[OF P7]]} goal,
+   counted "TrueI" @{thm TrueI} \<^prop>\<open>R 7 \<Longrightarrow> R 7\<close>]) \<^context>) 1 goal
+val _ = check "candidate cut by the quota"
+  (Synchronized.value forced <= 1 andalso Synchronized.value named <= 1)
+
+(*the theorem of an accepted candidate is the one that the trigger hands over, whatever its name
+  says: the text of the name is not evaluated, be it no fact or another fact*)
+val _ = ["no_such_fact", "QR[OF PQ[OF P7]]"] |> List.app (fn name =>
+  let
+    val res = mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+      [{name = K name, thm = Lazy.value @{thm PQ[OF P7]}, prop = goal, stature = stature}])
+      \<^context>) 64 goal
+  in
+    check ("the theorem that the trigger hands over " ^ name)
+      (case generated res of
+        [(_, name', t)] => name' = name andalso t aconv \<^prop>\<open>Q 7\<close>
+      | _ => false)
+  end)
 
 (*the same proposition from every round and from two expressions: one fact*)
 val res = mepo (with_trigger (fn _ =>
@@ -153,6 +173,13 @@ fun error_of trigger =
 val _ = check "exception of the theorem"
   (String.isPrefix "Undefined fact"
     (error_of (on_const \<^const_name>\<open>R\<close> [cand "no_such_fact" goal])))
+
+(*also one that is not an ERROR*)
+val _ = check "exception of the theorem that is no error"
+  ((mepo (with_trigger (on_const \<^const_name>\<open>R\<close>
+      [{name = K "QR[OF PQ[OF P7]]", thm = Lazy.lazy (fn () => the NONE), prop = goal,
+        stature = stature}]) \<^context>) 64 goal; false)
+    handle Option.Option => true)
 
 (*so does one raised while the name of an accepted candidate is printed: MePo prints the names of
   the facts that it returns*)

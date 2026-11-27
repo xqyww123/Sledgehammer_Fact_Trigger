@@ -79,6 +79,8 @@
   379 条，压缩空白的 0 条。
 - `auto_sledgehammer` 的 `fast_mepo` 只把局部事实交给 MePo，没有局部事实时不调用 MePo，触发器
   不运行。是 `auto_sledgehammer` 自己的做法。
+  【2026-11-27：这一条不再成立（auto_sledgehammer `006e5a8` 起，候选池为空时也调用 MePo，10.5）；
+  请作者逐条确认时跳过它。】
 - `try` 命令和自动 Sledgehammer 吞掉触发器的报错（原版的做法，主计划第 7、8 节）。
 - 主计划第 8 节的「已知且接受的后果」。
 
@@ -672,6 +674,39 @@ feature repository → 发布检查清单（SKILL isabelle-patch-feature 3.4）�
   - 测试加了一例 `exception of the name`（印被接受候选的名字时抛的异常原样传出）；主计划 3.1 那一块记了名字何时印。
   - README 一句改准：MePo 只对它接受的候选算 `thm`、印 `name`（原来写"`name` 用到时才印"，被接受的其实在 MePo 返回前就印）。
   - 这处改动还没有过代码评审（concept B 打算在提交之后做，改动作为后续提交）。
+- **2026-11-27 的进展（以本条为准）**：
+  - 合并：`41d697b` 已沿 `default_fact_qualifiers`（`eac6d19`）、`global_form`（`431a44a`）、`generic_mksimps`（`a9e0640`）、
+    concept（`3082fec`，concept A1 合并）四棵私有树合并下去，每棵合并后都构建了它要求的 session，都已推送。
+    concept 的 `concept_selector` 触发器已改成新接口（`contrib/concept` `f31e6dd`）。
+  - 作者 2026-11-27 01:20 UTC：「要用 make-patches 给 trigger 打第 4 版的标签」；
+    concept B 随后把"标签一打内容就定了、接口改动还没有过代码评审"讲给他，问现在打还是先评审；他 01:27 UTC：「先做代码评审」。
+    所以标签**没有打**。发布规程的前四步做过了：
+    - 基的标签恰有一个（`fast_abbrev_printing/2`）；
+    - 五条检查都没有输出；
+    - `tools/patched_files.txt` 补两个文件、`tools/signature_additions.txt` 补一条，`check-signatures` 通过
+      （feature repository `d74e172`）；
+    - `tools/release_build.sh` 在 `41d697b` 上通过。
+  - 代码评审（Workflow `wf_770083bd-971`，报告在 MLML 的 `ai-artifacts/concept_B_trigger_lazy_interface_code_review_2026-11-27.md`，不提交）：
+    MePo 的改动是对的，`candidate` 的类型不需要再改；测试与文档没有做完。它建议标签等到发 conda 时、
+    concept 的 fact trigger 对着这个接口测过之后再打。concept B 照此办：到时再请作者下令。
+  - 照评审改了的（private tree 的那一处 2026-11-27 提交并推送为 `7a28f60`；其余随 feature repository 同日的提交）：
+    private tree 里 `sledgehammer_mepo.ML` 一处注释（"made when MePo returns the candidate"）；
+    README 三处（名字何时印；印名字时的异常；版本说明一句）；
+    测试加三样（被名额截掉的候选；"交出的是触发器给的定理"改成两次运行；不是 `ERROR` 的异常）；
+    变异加四个（共九个）。带新测试的对照构建通过（2026-11-27）。
+  - 九个变异对着新测试重跑了（2026-11-27 03:11 至 04:40 UTC），全部被测试 session 抓到，每次替换恰好发生一次；
+    之后好源码重建，测试通过（04:47 UTC）。原先五个失败的检查与 2026-11-26 相同。新加的四个：
+    - 先照名字的文字去取定理、取不到才用 `thm`：`candidate cut by the quota` 一例失败；
+    - 交出的定理由 `prop` 另造、不是触发器给的那一条：`the theorem that the trigger hands over` 一例失败；
+    - 算 `thm` 时不是 `ERROR` 的异常被包成 `ERROR`：测试 session 在 "Errors" 一节的 ML 块里以 `exception Option raised` 的 `ERROR` 失败
+      （"不是 `ERROR` 的异常原样传出"那一例接的是原来的异常，包成的 `ERROR` 没有人接）；
+    - 名额截掉候选之前就把每个候选的 `thm` 算出来：`candidate cut by the quota` 一例失败。
+  - auto_sledgehammer 的 `Test/Test_Fast_Mepo_Trigger.thy` 已改成新接口，**还没有跑、没有提交**。
+    它只在带 fact trigger 的树上跑，那些树现在都是新接口，所以它在改之前编译不过。
+    共享树是官方原版，没有 fact trigger，这个测试不在它上面跑。
+  - 第 4 节（"已知、目前不在范围内的"）：作者 2026-11-27 问了每条是谁定的、为什么不修，concept B 照两份计划的记录答了；
+    他还没有逐条确认。打标签之前要再请他逐条确认。名字何时印、文字不核对两条他已接受，记在主计划第 8 节第 6、7 条。
+  - 接下来：评审要的短复审；跑 auto_sledgehammer 的那个测试；然后等发 conda 时的命令。
 - **做什么**：主计划 `SLEDGEHAMMER_FACT_TRIGGER_PLAN.md` 3.1 末尾"候选的接口改成 lazy"一块：
   `candidate` 变成 `{name: unit -> string, thm: thm lazy, prop: term, stature: stature}`，被接受时取 `thm`、不再对文字求值，两句报错删掉。
   随之没有了的：第 2 节的 S4（`accept_item` 用 `Attrib.eval_thms` 求值，已在私有树 `0f47be1` 里）与它的测试两例（`PQ QR`、`PQ nothing`）；这件要向作者说明。
