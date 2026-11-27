@@ -1,5 +1,7 @@
+src/HOL/Tools/Metis/metis_instantiations.ML
 src/HOL/Tools/Metis/metis_tactic.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_fact.ML
+src/HOL/Tools/Sledgehammer/sledgehammer_instantiations.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_mash.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_mepo.ML
 src/HOL/Tools/Sledgehammer/sledgehammer_prover_tactic.ML

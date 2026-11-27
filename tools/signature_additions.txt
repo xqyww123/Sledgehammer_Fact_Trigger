@@ -16,3 +16,4 @@ src/HOL/Tools/try0_util.ML TRY0_UTIL val string_of_xref'
 src/HOL/Tools/try0_util.ML TRY0_UTIL val indexes_of_selection
 src/HOL/Tools/Sledgehammer/sledgehammer_util.ML SLEDGEHAMMER_UTIL val add_attribs_to_name
 src/HOL/Tools/Metis/metis_tactic.ML METIS_TACTIC val th_name_of_multi_thms
+src/HOL/Tools/Sledgehammer/sledgehammer_mash.ML SLEDGEHAMMER_MASH val facts_of_filter_results
